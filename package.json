@@ -1,0 +1,77 @@
+{
+  "name": "react-native-infinite-tab-view",
+  "version": "1.0.0",
+  "description": "Infinite scroll tab view with collapsible header for React Native - New Architecture ready, drop-in replacement for react-native-collapsible-tab-view",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "prepare": "npm run build",
+    "example": "cd example && npm start",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "format": "biome format --write",
+    "test": "NODE_OPTIONS='--no-experimental-detect-module' vitest",
+    "test:watch": "NODE_OPTIONS='--no-experimental-detect-module' vitest --watch",
+    "test:coverage": "NODE_OPTIONS='--no-experimental-detect-module' vitest --coverage"
+  },
+  "keywords": [
+    "react-native",
+    "tab",
+    "tabs",
+    "infinite",
+    "scroll",
+    "collapsible",
+    "header",
+    "new-architecture",
+    "fabric",
+    "expo"
+  ],
+  "author": "johntips",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-native": ">=0.70.0",
+    "react-native-reanimated": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native-reanimated": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.10",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/react": "~18.2.0",
+    "@types/react-native": "~0.73.0",
+    "@types/react-test-renderer": "^19.1.0",
+    "@vitejs/plugin-react": "^5.1.2",
+    "@vitest/coverage-v8": "^4.0.16",
+    "jsdom": "^27.4.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-native": "0.73.0",
+    "react-native-web": "^0.21.2",
+    "react-test-renderer": "^18.2.0",
+    "typescript": "~5.3.0",
+    "vitest": "^4.0.16",
+    "vitest-react-native": "^0.1.5"
+  },
+  "files": [
+    "lib",
+    "src",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/johntips/react-native-infinite-tab-view.git"
+  },
+  "bugs": {
+    "url": "https://github.com/johntips/react-native-infinite-tab-view/issues"
+  },
+  "homepage": "https://github.com/johntips/react-native-infinite-tab-view#readme"
+}

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.3.10/schema.json",
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "includes": [
+      "**",
+      "!node_modules/**/*",
+      "!lib/**/*",
+      "!dist/**/*",
+      "!build/**/*",
+      "!coverage/**/*"
+    ]
+  },
+  "linter": {
+    "enabled": true,
+    "includes": ["**", "!node_modules", "!lib", "!dist", "!build", "!coverage"],
+    "rules": {
+      "recommended": true,
+      "a11y": {
+        "useButtonType": "off",
+        "useKeyWithClickEvents": "off",
+        "useAriaPropsForRole": "off",
+        "useMediaCaption": "off",
+        "useFocusableInteractive": "off",
+        "useSemanticElements": "off",
+        "noRedundantRoles": "off",
+        "useAriaPropsSupportedByRole": "off",
+        "noStaticElementInteractions": "off"
+      },
+      "complexity": {
+        "noUselessFragments": "off",
+        "noForEach": "off",
+        "useOptionalChain": "off",
+        "useLiteralKeys": "off",
+        "useIndexOf": "off",
+        "noThisInStatic": "off"
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "off",
+        "useHookAtTopLevel": "error",
+        "useJsxKeyInIterable": "off",
+        "noUnusedPrivateClassMembers": "off",
+        "noUnusedFunctionParameters": "off",
+        "useParseIntRadix": "off",
+        "noUnusedVariables": {
+          "level": "warn",
+          "options": {
+            "ignoreRestSiblings": true
+          }
+        }
+      },
+      "nursery": {
+        "noFloatingPromises": "error"
+      },
+      "style": {
+        "noNonNullAssertion": "off",
+        "noUnusedTemplateLiteral": "off",
+        "noUselessElse": "off",
+        "useExponentiationOperator": "off",
+        "useNodejsImportProtocol": "off",
+        "useTemplate": "off"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "off",
+        "noExplicitAny": "off",
+        "noDoubleEquals": "off",
+        "noGlobalIsNan": "off",
+        "noRedeclare": "off",
+        "useIsArray": "off",
+        "useIterableCallbackReturn": "off",
+        "noPrototypeBuiltins": "off",
+        "noNonNullAssertedOptionalChain": "off",
+        "noQuickfixBiome": "off"
+      },
+      "performance": {
+        "noAccumulatingSpread": "off",
+        "noImgElement": "off"
+      }
+    }
+  }
+}
