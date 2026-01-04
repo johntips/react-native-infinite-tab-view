@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build
+lib/
+*.log
+
+# Test coverage
+coverage/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Example app
+example/.expo/
+example/node_modules/

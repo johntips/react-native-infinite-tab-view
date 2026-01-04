@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "InfiniteTabViewExample",
+    "slug": "infinite-tab-view-example",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.johntips.infinitetabviewexample"
+    },
+    "android": {
+      "package": "com.johntips.infinitetabviewexample"
+    }
+  }
+}

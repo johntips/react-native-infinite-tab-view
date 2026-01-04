@@ -1,0 +1,46 @@
+# Source files (included via package.json files field, but explicitly ignore for safety)
+# src/
+
+# Development files
+example/
+.github/
+.vscode/
+.idea/
+
+# Test files
+src/__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+coverage/
+vitest.config.ts
+
+# Config files
+.eslintrc*
+.prettierrc*
+biome.json
+tsconfig.json
+.editorconfig
+
+# Build artifacts
+*.log
+*.tgz
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Assets (demos only needed on GitHub)
+assets/
+
+# Documentation (included via files field)
+# CONTRIBUTING.md
+# CHANGELOG.md
