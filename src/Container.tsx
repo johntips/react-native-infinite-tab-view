@@ -9,11 +9,11 @@ import {
   useState,
 } from "react";
 import {
-  Animated,
   ScrollView as RNScrollView,
   StyleSheet,
   View,
 } from "react-native";
+import { useSharedValue } from "react-native-reanimated";
 import { TabsProvider } from "./Context";
 import { SCREEN_WIDTH, TAB_BAR_HEIGHT, TAB_ITEM_WIDTH } from "./constants";
 import { DefaultTabBar } from "./TabBar";
@@ -31,6 +31,10 @@ export const Container: React.FC<TabsContainerProps> = ({
   infiniteScroll = true,
   tabBarCenterActive = true,
   onTabChange,
+  containerStyle,
+  headerContainerStyle,
+  tabBarContainerStyle,
+  allowHeaderOverscroll: _allowHeaderOverscroll = false,
 }) => {
   // タブデータを子要素から抽出
   const tabs = useMemo(() => {
@@ -47,9 +51,11 @@ export const Container: React.FC<TabsContainerProps> = ({
   }, [children]);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const prevActiveIndexRef = useRef(0);
   const contentScrollRef = useRef<RNScrollView>(null);
   const tabScrollRef = useRef<RNScrollView>(null);
-  const scrollY = useRef(new Animated.Value(0)).current;
+  // Reanimated SharedValue for scroll tracking (collapsible-tab-view compatibility)
+  const scrollY = useSharedValue(0);
   const isScrollingProgrammatically = useRef(false);
   const hasInitialized = useRef(false);
   const hasTabInitialized = useRef(false);
@@ -73,6 +79,21 @@ export const Container: React.FC<TabsContainerProps> = ({
       return ((index % tabs.length) + tabs.length) % tabs.length;
     },
     [tabs.length, infiniteScroll],
+  );
+
+  // onTabChange を呼び出すヘルパー
+  const triggerTabChange = useCallback(
+    (newIndex: number, prevIndex: number) => {
+      if (onTabChange && tabs[newIndex] && tabs[prevIndex]) {
+        onTabChange({
+          tabName: tabs[newIndex].name,
+          index: newIndex,
+          prevTabName: tabs[prevIndex].name,
+          prevIndex: prevIndex,
+        });
+      }
+    },
+    [onTabChange, tabs],
   );
 
   // タブ中央配置（仮想インデックス対応）
@@ -120,6 +141,8 @@ export const Container: React.FC<TabsContainerProps> = ({
   const handleIndexChange = useCallback(
     (newIndex: number) => {
       const normalized = normalizeIndex(newIndex);
+      const prevIndex = prevActiveIndexRef.current;
+      prevActiveIndexRef.current = normalized;
       setActiveIndex(normalized);
 
       // タブ中央配置
@@ -152,15 +175,13 @@ export const Container: React.FC<TabsContainerProps> = ({
       });
 
       // コールバック
-      if (onTabChange) {
-        onTabChange(tabs[normalized].name);
-      }
+      triggerTabChange(normalized, prevIndex);
 
       setTimeout(() => {
         isScrollingProgrammatically.current = false;
       }, 300);
     },
-    [normalizeIndex, scrollTabToCenter, tabs, onTabChange, infiniteScroll],
+    [normalizeIndex, scrollTabToCenter, tabs.length, triggerTabChange, infiniteScroll],
   );
 
   // タブタップハンドラー
@@ -185,12 +206,11 @@ export const Container: React.FC<TabsContainerProps> = ({
 
       // activeIndexが変わった場合のみ更新
       if (normalized !== activeIndex) {
+        const prevIndex = prevActiveIndexRef.current;
+        prevActiveIndexRef.current = normalized;
         setActiveIndex(normalized);
         scrollTabToCenter(normalized);
-
-        if (onTabChange) {
-          onTabChange(tabs[normalized].name);
-        }
+        triggerTabChange(normalized, prevIndex);
       }
 
       // エッジ検出とリセット（無限スクロール時）
@@ -232,10 +252,10 @@ export const Container: React.FC<TabsContainerProps> = ({
     },
     [
       activeIndex,
-      tabs,
+      tabs.length,
       normalizeIndex,
       scrollTabToCenter,
-      onTabChange,
+      triggerTabChange,
       infiniteScroll,
       totalVirtualPages,
       middleVirtualIndex,
@@ -352,6 +372,14 @@ export const Container: React.FC<TabsContainerProps> = ({
     return undefined;
   }, [infiniteScroll, tabs.length, middleVirtualIndex]);
 
+  // scrollY を更新する関数（子コンポーネントから呼び出し用）
+  const updateScrollY = useCallback(
+    (y: number) => {
+      scrollY.value = y;
+    },
+    [scrollY],
+  );
+
   // Context値
   const contextValue = useMemo(
     () => ({
@@ -361,6 +389,7 @@ export const Container: React.FC<TabsContainerProps> = ({
       headerHeight,
       infiniteScroll,
       tabBarCenterActive,
+      updateScrollY,
     }),
     [
       activeIndex,
@@ -369,6 +398,7 @@ export const Container: React.FC<TabsContainerProps> = ({
       headerHeight,
       infiniteScroll,
       tabBarCenterActive,
+      updateScrollY,
     ],
   );
 
@@ -408,14 +438,16 @@ export const Container: React.FC<TabsContainerProps> = ({
 
   return (
     <TabsProvider value={contextValue}>
-      <View style={styles.container}>
+      <View style={[styles.container, containerStyle]}>
         {/* ヘッダー */}
         {renderHeader && (
-          <View style={{ height: headerHeight }}>{renderHeader()}</View>
+          <View style={[headerHeight > 0 && { height: headerHeight }, headerContainerStyle]}>
+            {renderHeader()}
+          </View>
         )}
 
         {/* タブバー */}
-        <View style={styles.tabBarContainer}>
+        <View style={[styles.tabBarContainer, tabBarContainerStyle]}>
           {renderTabBar ? (
             renderTabBar({
               tabs,
