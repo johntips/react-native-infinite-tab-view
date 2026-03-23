@@ -255,7 +255,9 @@ describe("DefaultTabBar", () => {
       );
 
       // 長いラベルのテキストが存在することを確認
-      const longLabel = getAllByText("Very Long Tab Label That Should Be Truncated")[0];
+      const longLabel = getAllByText(
+        "Very Long Tab Label That Should Be Truncated",
+      )[0];
       expect(longLabel).toBeTruthy();
     });
   });
