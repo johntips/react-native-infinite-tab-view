@@ -1,6 +1,6 @@
 import { Container } from "./Container";
-import { FlatList } from "./FlatList";
 import { FlashList } from "./FlashList";
+import { FlatList } from "./FlatList";
 import { ScrollView } from "./ScrollView";
 import { Tab } from "./Tab";
 
@@ -12,9 +12,9 @@ export const Tabs = {
   ScrollView,
 };
 
-// Hooks
-export { useCurrentTabScrollY, useActiveTabIndex, useTabs } from "./hooks";
 export { useTabsContext } from "./Context";
+// Hooks
+export { useActiveTabIndex, useCurrentTabScrollY, useTabs } from "./hooks";
 
 // Components
 export { MaterialTabBar } from "./MaterialTabBar";

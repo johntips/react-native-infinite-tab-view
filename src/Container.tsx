@@ -9,19 +9,30 @@ import {
   useState,
 } from "react";
 import {
-  ScrollView as RNScrollView,
+  Dimensions,
+  type ScrollView as RNScrollView,
   StyleSheet,
   View,
 } from "react-native";
+import type { PagerViewOnPageSelectedEvent } from "react-native-pager-view";
+import PagerView from "react-native-pager-view";
 import { useSharedValue } from "react-native-reanimated";
 import { TabsProvider } from "./Context";
-import { SCREEN_WIDTH, TAB_BAR_HEIGHT, TAB_ITEM_WIDTH } from "./constants";
+import {
+  DEFAULT_TAB_ITEM_WIDTH,
+  SCREEN_WIDTH,
+  TAB_BAR_HEIGHT,
+} from "./constants";
 import { DefaultTabBar } from "./TabBar";
 import type { TabsContainerProps } from "./types";
 import { getCenterScrollPosition } from "./utils";
 
-// 効率的な無限スクロールのための仮想ページ倍率（3倍で十分）
-const VIRTUAL_MULTIPLIER = 3;
+interface VirtualPage {
+  /** 実タブのインデックス (0..tabs.length-1) */
+  realIndex: number;
+  /** クローンかどうか */
+  isClone: boolean;
+}
 
 export const Container: React.FC<TabsContainerProps> = ({
   children,
@@ -52,25 +63,50 @@ export const Container: React.FC<TabsContainerProps> = ({
 
   const [activeIndex, setActiveIndex] = useState(0);
   const prevActiveIndexRef = useRef(0);
-  const contentScrollRef = useRef<RNScrollView>(null);
   const tabScrollRef = useRef<RNScrollView>(null);
+  // タブバー用仮想インデックス（最短経路計算に使用）
+  const tabVirtualIndexRef = useRef(0);
+
+  // PagerView refs
+  const pagerRef = useRef<PagerView>(null);
+  const isJumpingRef = useRef(false);
+  const pendingJumpIndexRef = useRef<number | null>(null);
+
   // Reanimated SharedValue for scroll tracking (collapsible-tab-view compatibility)
   const scrollY = useSharedValue(0);
+
   const isScrollingProgrammatically = useRef(false);
-  const hasInitialized = useRef(false);
   const hasTabInitialized = useRef(false);
 
-  // 仮想インデックス（無限スクロール用）
-  const virtualIndexRef = useRef(0); // コンテンツ用
-  const tabVirtualIndexRef = useRef(0); // タブバー用
-  const totalVirtualPages = infiniteScroll
-    ? tabs.length * VIRTUAL_MULTIPLIER
+  // --- 無限スクロール用タブバー仮想ページ ---
+  // タブバーは従来通り ScrollView + 仮想ページ 3倍
+  const TAB_VIRTUAL_MULTIPLIER = 3;
+  const tabTotalVirtualPages = infiniteScroll
+    ? tabs.length * TAB_VIRTUAL_MULTIPLIER
     : tabs.length;
-  const middleVirtualIndex = infiniteScroll
-    ? Math.floor(VIRTUAL_MULTIPLIER / 2) * tabs.length
+  const tabMiddleVirtualIndex = infiniteScroll
+    ? Math.floor(TAB_VIRTUAL_MULTIPLIER / 2) * tabs.length
     : 0;
 
-  // インデックス正規化（無限スクロール対応）
+  // --- PagerView 用仮想ページ配列 ---
+  // 無限スクロール時: [head clones] + [real] + [tail clones]
+  // head clones = tabs のコピー (インデックス 0..N-1)
+  // real        = tabs のコピー (インデックス N..2N-1)
+  // tail clones = tabs のコピー (インデックス 2N..3N-1)
+  const pages: VirtualPage[] = useMemo(() => {
+    if (!infiniteScroll || tabs.length <= 1) {
+      return tabs.map((_, i) => ({ realIndex: i, isClone: false }));
+    }
+    const head = tabs.map((_, i) => ({ realIndex: i, isClone: true }));
+    const real = tabs.map((_, i) => ({ realIndex: i, isClone: false }));
+    const tail = tabs.map((_, i) => ({ realIndex: i, isClone: true }));
+    return [...head, ...real, ...tail];
+  }, [tabs, infiniteScroll]);
+
+  // realページの開始インデックス（PagerView 内での位置）
+  const realStartIndex = infiniteScroll && tabs.length > 1 ? tabs.length : 0;
+
+  // インデックス正規化
   const normalizeIndex = useCallback(
     (index: number): number => {
       if (!infiniteScroll) {
@@ -101,10 +137,8 @@ export const Container: React.FC<TabsContainerProps> = ({
     (index: number) => {
       if (!tabBarCenterActive || !tabScrollRef.current) return;
 
-      // 無限スクロール時は現在の仮想インデックス位置のタブをセンターに
       let targetIndex = index;
       if (infiniteScroll) {
-        // 現在の仮想インデックスから、表示すべき仮想タブのインデックスを計算
         const currentVirtualIndex = tabVirtualIndexRef.current;
         const currentRealIndex = currentVirtualIndex % tabs.length;
         const indexDiff = index - currentRealIndex;
@@ -126,8 +160,9 @@ export const Container: React.FC<TabsContainerProps> = ({
 
       const scrollX = getCenterScrollPosition(
         targetIndex,
-        TAB_ITEM_WIDTH,
+        [],
         SCREEN_WIDTH,
+        DEFAULT_TAB_ITEM_WIDTH,
       );
       tabScrollRef.current.scrollTo({
         x: scrollX,
@@ -137,128 +172,98 @@ export const Container: React.FC<TabsContainerProps> = ({
     [tabBarCenterActive, infiniteScroll, tabs.length],
   );
 
-  // タブ変更ハンドラー（統一ハンドラー）
-  const handleIndexChange = useCallback(
+  // --- PagerView イベントハンドラ ---
+
+  // onPageSelected: ページが確定したときに呼ばれる
+  const handlePageSelected = useCallback(
+    (e: PagerViewOnPageSelectedEvent) => {
+      if (isJumpingRef.current) return;
+
+      const position = e.nativeEvent.position;
+      const page = pages[position];
+      if (!page) return;
+
+      const realIndex = page.realIndex;
+
+      // 実タブのインデックスを更新
+      const prevIndex = prevActiveIndexRef.current;
+      prevActiveIndexRef.current = realIndex;
+      setActiveIndex(realIndex);
+      scrollTabToCenter(realIndex);
+
+      if (realIndex !== prevIndex) {
+        triggerTabChange(realIndex, prevIndex);
+      }
+
+      // クローンページの場合、対応するrealページへのジャンプを予約
+      if (page.isClone && infiniteScroll && tabs.length > 1) {
+        pendingJumpIndexRef.current = realStartIndex + realIndex;
+      }
+    },
+    [
+      pages,
+      realStartIndex,
+      infiniteScroll,
+      tabs.length,
+      scrollTabToCenter,
+      triggerTabChange,
+    ],
+  );
+
+  // onPageScrollStateChanged: スクロール状態が変わったときに呼ばれる
+  // idle になったタイミングでクローン→realジャンプを実行
+  const handlePageScrollStateChanged = useCallback(
+    (e: {
+      nativeEvent: { pageScrollState: "idle" | "dragging" | "settling" };
+    }) => {
+      if (e.nativeEvent.pageScrollState !== "idle") return;
+      if (isJumpingRef.current) return;
+
+      const jumpIndex = pendingJumpIndexRef.current;
+      if (jumpIndex === null) return;
+
+      isJumpingRef.current = true;
+      pendingJumpIndexRef.current = null;
+
+      requestAnimationFrame(() => {
+        pagerRef.current?.setPageWithoutAnimation(jumpIndex);
+        requestAnimationFrame(() => {
+          isJumpingRef.current = false;
+        });
+      });
+    },
+    [],
+  );
+
+  // タブタップハンドラー
+  const handleTabPress = useCallback(
     (newIndex: number) => {
       const normalized = normalizeIndex(newIndex);
       const prevIndex = prevActiveIndexRef.current;
       prevActiveIndexRef.current = normalized;
       setActiveIndex(normalized);
-
-      // タブ中央配置
       scrollTabToCenter(normalized);
 
-      // コンテンツスクロール（仮想インデックスを使用）
-      const currentVirtualIndex = virtualIndexRef.current;
-      const currentRealIndex = currentVirtualIndex % tabs.length;
-      const indexDiff = normalized - currentRealIndex;
-
-      // 最短経路で移動
-      let targetVirtualIndex = currentVirtualIndex + indexDiff;
-
-      // 循環を考慮した最短経路
-      if (infiniteScroll && Math.abs(indexDiff) > tabs.length / 2) {
-        if (indexDiff > 0) {
-          targetVirtualIndex = currentVirtualIndex - (tabs.length - indexDiff);
-        } else {
-          targetVirtualIndex = currentVirtualIndex + (tabs.length + indexDiff);
-        }
-      }
-
-      virtualIndexRef.current = targetVirtualIndex;
-
-      isScrollingProgrammatically.current = true;
-      contentScrollRef.current?.scrollTo({
-        x: targetVirtualIndex * SCREEN_WIDTH,
-        y: 0,
-        animated: true,
-      });
-
-      // コールバック
-      triggerTabChange(normalized, prevIndex);
-
-      setTimeout(() => {
-        isScrollingProgrammatically.current = false;
-      }, 300);
-    },
-    [normalizeIndex, scrollTabToCenter, tabs.length, triggerTabChange, infiniteScroll],
-  );
-
-  // タブタップハンドラー
-  const handleTabPress = useCallback(
-    (index: number) => {
-      handleIndexChange(index);
-    },
-    [handleIndexChange],
-  );
-
-  // コンテンツスクロールハンドラー（仮想インデックス対応）
-  const handleContentScroll = useCallback(
-    (event: any) => {
-      if (isScrollingProgrammatically.current) return;
-
-      const offsetX = event.nativeEvent.contentOffset.x;
-      const newVirtualIndex = Math.round(offsetX / SCREEN_WIDTH);
-      const newRealIndex = newVirtualIndex % tabs.length;
-      const normalized = normalizeIndex(newRealIndex);
-
-      virtualIndexRef.current = newVirtualIndex;
-
-      // activeIndexが変わった場合のみ更新
-      if (normalized !== activeIndex) {
-        const prevIndex = prevActiveIndexRef.current;
-        prevActiveIndexRef.current = normalized;
-        setActiveIndex(normalized);
-        scrollTabToCenter(normalized);
+      if (normalized !== prevIndex) {
         triggerTabChange(normalized, prevIndex);
       }
 
-      // エッジ検出とリセット（無限スクロール時）
-      if (infiniteScroll) {
-        const edgeThreshold = tabs.length; // 両端1セット分で検出
-
-        if (newVirtualIndex < edgeThreshold) {
-          // 左エッジに近づいたら中央にリセット
-          const targetVirtualIndex = middleVirtualIndex + normalized;
-          virtualIndexRef.current = targetVirtualIndex;
-          setTimeout(() => {
-            isScrollingProgrammatically.current = true;
-            contentScrollRef.current?.scrollTo({
-              x: targetVirtualIndex * SCREEN_WIDTH,
-              y: 0,
-              animated: false,
-            });
-            setTimeout(() => {
-              isScrollingProgrammatically.current = false;
-            }, 50);
-          }, 100);
-        } else if (newVirtualIndex >= totalVirtualPages - edgeThreshold) {
-          // 右エッジに近づいたら中央にリセット
-          const targetVirtualIndex = middleVirtualIndex + normalized;
-          virtualIndexRef.current = targetVirtualIndex;
-          setTimeout(() => {
-            isScrollingProgrammatically.current = true;
-            contentScrollRef.current?.scrollTo({
-              x: targetVirtualIndex * SCREEN_WIDTH,
-              y: 0,
-              animated: false,
-            });
-            setTimeout(() => {
-              isScrollingProgrammatically.current = false;
-            }, 50);
-          }, 100);
-        }
+      // PagerView のページ切替
+      if (infiniteScroll && tabs.length > 1) {
+        // realページ範囲内の対応するインデックスに移動
+        const targetPagerIndex = realStartIndex + normalized;
+        pagerRef.current?.setPage(targetPagerIndex);
+      } else {
+        pagerRef.current?.setPage(normalized);
       }
     },
     [
-      activeIndex,
-      tabs.length,
       normalizeIndex,
       scrollTabToCenter,
       triggerTabChange,
       infiniteScroll,
-      totalVirtualPages,
-      middleVirtualIndex,
+      tabs.length,
+      realStartIndex,
     ],
   );
 
@@ -269,108 +274,78 @@ export const Container: React.FC<TabsContainerProps> = ({
       if (isScrollingProgrammatically.current) return;
 
       const offsetX = event.nativeEvent.contentOffset.x;
-      const newVirtualIndex = Math.round(offsetX / TAB_ITEM_WIDTH);
+      const newVirtualIndex = Math.round(offsetX / DEFAULT_TAB_ITEM_WIDTH);
 
       tabVirtualIndexRef.current = newVirtualIndex;
 
       // エッジ検出とリセット
-      const edgeThreshold = tabs.length; // 両端1セット分で検出
+      const edgeThreshold = tabs.length;
 
       if (newVirtualIndex < edgeThreshold) {
-        // 左エッジに近づいたら中央にリセット
         const normalized = normalizeIndex(newVirtualIndex);
-        const targetVirtualIndex = middleVirtualIndex + normalized;
+        const targetVirtualIndex = tabMiddleVirtualIndex + normalized;
         tabVirtualIndexRef.current = targetVirtualIndex;
 
-        setTimeout(() => {
+        requestAnimationFrame(() => {
           isScrollingProgrammatically.current = true;
-          const scrollX = targetVirtualIndex * TAB_ITEM_WIDTH;
+          const scrollX = targetVirtualIndex * DEFAULT_TAB_ITEM_WIDTH;
           tabScrollRef.current?.scrollTo({
             x: scrollX,
             y: 0,
             animated: false,
           });
-          setTimeout(() => {
+          requestAnimationFrame(() => {
             isScrollingProgrammatically.current = false;
-          }, 50);
-        }, 100);
-      } else if (newVirtualIndex >= totalVirtualPages - edgeThreshold) {
-        // 右エッジに近づいたら中央にリセット
+          });
+        });
+      } else if (newVirtualIndex >= tabTotalVirtualPages - edgeThreshold) {
         const normalized = normalizeIndex(newVirtualIndex);
-        const targetVirtualIndex = middleVirtualIndex + normalized;
+        const targetVirtualIndex = tabMiddleVirtualIndex + normalized;
         tabVirtualIndexRef.current = targetVirtualIndex;
 
-        setTimeout(() => {
+        requestAnimationFrame(() => {
           isScrollingProgrammatically.current = true;
-          const scrollX = targetVirtualIndex * TAB_ITEM_WIDTH;
+          const scrollX = targetVirtualIndex * DEFAULT_TAB_ITEM_WIDTH;
           tabScrollRef.current?.scrollTo({
             x: scrollX,
             y: 0,
             animated: false,
           });
-          setTimeout(() => {
+          requestAnimationFrame(() => {
             isScrollingProgrammatically.current = false;
-          }, 50);
-        }, 100);
+          });
+        });
       }
     },
     [
       infiniteScroll,
       tabs.length,
-      totalVirtualPages,
-      middleVirtualIndex,
+      tabTotalVirtualPages,
+      tabMiddleVirtualIndex,
       normalizeIndex,
     ],
   );
 
-  // activeIndex変更時にタブを中央配置（タブタップ以外でも動作）
+  // activeIndex変更時にタブを中央配置
   useEffect(() => {
     scrollTabToCenter(activeIndex);
   }, [activeIndex, scrollTabToCenter]);
-
-  // 初期スクロール位置設定（無限スクロール時）
-  useEffect(() => {
-    if (!hasInitialized.current && infiniteScroll && tabs.length > 0) {
-      hasInitialized.current = true;
-      virtualIndexRef.current = middleVirtualIndex;
-
-      // 次のフレームで実行してレイアウト完了を待つ
-      const timerId = setTimeout(() => {
-        contentScrollRef.current?.scrollTo({
-          x: middleVirtualIndex * SCREEN_WIDTH,
-          y: 0,
-          animated: false,
-        });
-      }, 0);
-
-      return () => {
-        clearTimeout(timerId);
-      };
-    }
-    return undefined;
-  }, [infiniteScroll, tabs.length, middleVirtualIndex]);
 
   // タブバー初期スクロール位置設定（無限スクロール時）
   useEffect(() => {
     if (!hasTabInitialized.current && infiniteScroll && tabs.length > 0) {
       hasTabInitialized.current = true;
-      tabVirtualIndexRef.current = middleVirtualIndex;
+      tabVirtualIndexRef.current = tabMiddleVirtualIndex;
 
-      // 次のフレームで実行してレイアウト完了を待つ
-      const timerId = setTimeout(() => {
+      requestAnimationFrame(() => {
         tabScrollRef.current?.scrollTo({
-          x: middleVirtualIndex * TAB_ITEM_WIDTH,
+          x: tabMiddleVirtualIndex * DEFAULT_TAB_ITEM_WIDTH,
           y: 0,
           animated: false,
         });
-      }, 0);
-
-      return () => {
-        clearTimeout(timerId);
-      };
+      });
     }
-    return undefined;
-  }, [infiniteScroll, tabs.length, middleVirtualIndex]);
+  }, [infiniteScroll, tabs.length, tabMiddleVirtualIndex]);
 
   // scrollY を更新する関数（子コンポーネントから呼び出し用）
   const updateScrollY = useCallback(
@@ -379,6 +354,9 @@ export const Container: React.FC<TabsContainerProps> = ({
     },
     [scrollY],
   );
+
+  // タブ名の配列
+  const tabNames = useMemo(() => tabs.map((t) => t.name), [tabs]);
 
   // Context値
   const contextValue = useMemo(
@@ -390,6 +368,7 @@ export const Container: React.FC<TabsContainerProps> = ({
       infiniteScroll,
       tabBarCenterActive,
       updateScrollY,
+      tabNames,
     }),
     [
       activeIndex,
@@ -399,49 +378,45 @@ export const Container: React.FC<TabsContainerProps> = ({
       infiniteScroll,
       tabBarCenterActive,
       updateScrollY,
+      tabNames,
     ],
   );
 
-  // コンテンツビュー（仮想ページ生成）
+  // コンテンツビュー（PagerView の children として生成）
   const contentViews = useMemo(() => {
     const childrenArray = Children.toArray(children);
 
-    if (infiniteScroll) {
-      // 無限スクロール時：仮想ページ生成
-      return Array.from({ length: totalVirtualPages }, (_, virtualIndex) => {
-        const realIndex = virtualIndex % tabs.length;
-        const child = childrenArray[realIndex];
+    return pages.map((page, pagerIndex) => {
+      const child = childrenArray[page.realIndex];
 
-        if (isValidElement(child)) {
-          return (
-            <View key={`virtual-${virtualIndex}`} style={styles.page}>
-              {child.props.children}
-            </View>
-          );
-        }
-        return null;
-      });
-    } else {
-      // 通常時：有限ページ
-      return Children.map(children, (child, index) => {
-        if (isValidElement(child)) {
-          return (
-            <View key={tabs[index]?.name || index} style={styles.page}>
-              {child.props.children}
-            </View>
-          );
-        }
-        return null;
-      });
-    }
-  }, [children, tabs, infiniteScroll, totalVirtualPages]);
+      if (isValidElement(child)) {
+        return (
+          <View
+            key={`pager-${page.isClone ? "clone" : "real"}-${pagerIndex}`}
+            style={styles.page}
+          >
+            {child.props.children}
+          </View>
+        );
+      }
+      return <View key={`pager-empty-${pagerIndex}`} style={styles.page} />;
+    });
+  }, [children, pages]);
+
+  // 初期ページ（PagerView の initialPage）
+  const initialPage = infiniteScroll && tabs.length > 1 ? realStartIndex : 0;
 
   return (
     <TabsProvider value={contextValue}>
       <View style={[styles.container, containerStyle]}>
         {/* ヘッダー */}
         {renderHeader && (
-          <View style={[headerHeight > 0 && { height: headerHeight }, headerContainerStyle]}>
+          <View
+            style={[
+              headerHeight > 0 && { height: headerHeight },
+              headerContainerStyle,
+            ]}
+          >
             {renderHeader()}
           </View>
         )}
@@ -470,19 +445,19 @@ export const Container: React.FC<TabsContainerProps> = ({
           )}
         </View>
 
-        {/* コンテンツエリア */}
-        <RNScrollView
-          ref={contentScrollRef}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={handleContentScroll}
-          scrollEventThrottle={16}
-          style={styles.content}
-          contentContainerStyle={styles.scrollContent}
-        >
-          {contentViews}
-        </RNScrollView>
+        {/* コンテンツエリア（PagerView） */}
+        <View style={styles.content}>
+          <PagerView
+            ref={pagerRef}
+            style={styles.pagerView}
+            initialPage={initialPage}
+            offscreenPageLimit={1}
+            onPageSelected={handlePageSelected}
+            onPageScrollStateChanged={handlePageScrollStateChanged}
+          >
+            {contentViews}
+          </PagerView>
+        </View>
       </View>
     </TabsProvider>
   );
@@ -501,8 +476,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  scrollContent: {
-    flexDirection: "row",
+  pagerView: {
+    flex: 1,
   },
   page: {
     width: SCREEN_WIDTH,

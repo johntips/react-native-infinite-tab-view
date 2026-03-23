@@ -1,5 +1,12 @@
-import type { ReactElement, ReactNode } from "react";
-import type { FlatListProps, ScrollViewProps, StyleProp, ViewStyle } from "react-native";
+import type { ComponentProps, ReactElement, ReactNode, RefObject } from "react";
+import type {
+  FlatListProps,
+  ScrollView,
+  ScrollViewProps,
+  StyleProp,
+  ViewStyle,
+} from "react-native";
+import type PagerView from "react-native-pager-view";
 
 export interface TabChangeEvent {
   tabName: string;
@@ -21,6 +28,10 @@ export interface TabsContainerProps {
   headerContainerStyle?: StyleProp<ViewStyle>;
   tabBarContainerStyle?: StyleProp<ViewStyle>;
   allowHeaderOverscroll?: boolean;
+  /** PagerView に直接渡す props */
+  pagerProps?: Partial<ComponentProps<typeof PagerView>>;
+  /** 初期表示タブ名 */
+  initialTabName?: string;
 }
 
 export interface TabProps {
@@ -36,6 +47,8 @@ export interface TabBarProps {
   infiniteScroll: boolean;
   centerActive: boolean;
   onScroll?: (event: any) => void;
+  /** Container から渡される ScrollView ref */
+  tabScrollRef?: RefObject<ScrollView>;
 }
 
 export interface TabsContextValue {
@@ -46,6 +59,8 @@ export interface TabsContextValue {
   infiniteScroll: boolean;
   tabBarCenterActive: boolean;
   updateScrollY: (y: number) => void;
+  /** タブ名の配列 */
+  tabNames: string[];
 }
 
 export interface TabsFlatListProps<T> extends FlatListProps<T> {
