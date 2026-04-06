@@ -52,12 +52,17 @@
     "@biomejs/biome": "^2.3.10",
     "@shopify/flash-list": "^2.2.0",
     "@types/react": "~19.2.0",
+    "@testing-library/react": "^16.0.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "jsdom": "^24.0.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-native": "0.83.4",
     "react-native-pager-view": "^8.0.0",
     "react-native-reanimated": "^4.2.1",
-    "typescript": "~5.7.0"
+    "react-native-web": "^0.21.0",
+    "typescript": "~5.7.0",
+    "vitest": "^3.2.0"
   },
   "files": [
     "lib",
