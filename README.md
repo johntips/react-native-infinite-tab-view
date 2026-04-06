@@ -333,6 +333,7 @@ function CustomTabBar({ tabs, activeIndex, onTabPress }: TabBarProps) {
 | `infiniteScroll` | `boolean` | `true` | Enable infinite loop |
 | `tabBarCenterActive` | `boolean` | `true` | Auto-center active tab |
 | `onTabChange` | `(event: TabChangeEvent) => void` | - | Tab change callback |
+| `onFocusedTabPress` | `(index: number) => void` | - | Called when the already-active tab is pressed again (e.g. scroll to top) |
 | `initialTabName` | `string` | - | Initial active tab name |
 | `pagerProps` | `Partial<PagerViewProps>` | - | Props forwarded to PagerView |
 | `containerStyle` | `StyleProp<ViewStyle>` | - | Container style |

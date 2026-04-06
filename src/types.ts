@@ -23,6 +23,8 @@ export interface TabsContainerProps {
   infiniteScroll?: boolean; // 無限スクロール（デフォルトtrue）
   tabBarCenterActive?: boolean; // アクティブタブ中央配置（デフォルトtrue）
   onTabChange?: (event: TabChangeEvent) => void;
+  /** 既にアクティブなタブが再タップされたときに呼ばれる */
+  onFocusedTabPress?: (index: number) => void;
   // スタイリングオプション（collapsible-tab-view互換）
   containerStyle?: StyleProp<ViewStyle>;
   headerContainerStyle?: StyleProp<ViewStyle>;
