@@ -19,16 +19,17 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { DEFAULT_TAB_ITEM_WIDTH, TAB_BAR_HEIGHT } from "./constants";
+import {
+  DEFAULT_TAB_ITEM_WIDTH,
+  INDICATOR_TIMING_CONFIG,
+  TAB_BAR_HEIGHT,
+} from "./constants";
 import type { TabBarProps } from "./types";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
 // 無限スクロール用の仮想タブ倍率
 const VIRTUAL_MULTIPLIER = 3;
-
-// インジケーターアニメーション設定
-const INDICATOR_TIMING_CONFIG = { duration: 200 };
 
 interface TabLayout {
   x: number;
