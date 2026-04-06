@@ -35,6 +35,7 @@ export const Container: React.FC<TabsContainerProps> = ({
   infiniteScroll = true,
   tabBarCenterActive = true,
   onTabChange,
+  onFocusedTabPress,
   containerStyle,
   headerContainerStyle,
   tabBarContainerStyle,
@@ -176,12 +177,15 @@ export const Container: React.FC<TabsContainerProps> = ({
     (newIndex: number) => {
       const normalized = normalizeIndex(newIndex);
       const prevIndex = prevActiveIndexRef.current;
+
+      if (normalized === prevIndex) {
+        onFocusedTabPress?.(normalized);
+        return;
+      }
+
       prevActiveIndexRef.current = normalized;
       setActiveIndex(normalized);
-
-      if (normalized !== prevIndex) {
-        triggerTabChange(normalized, prevIndex);
-      }
+      triggerTabChange(normalized, prevIndex);
 
       // PagerView のページ切替
       if (infiniteScroll && tabs.length > 1) {
@@ -195,6 +199,7 @@ export const Container: React.FC<TabsContainerProps> = ({
     [
       normalizeIndex,
       triggerTabChange,
+      onFocusedTabPress,
       infiniteScroll,
       tabs.length,
       realStartIndex,
