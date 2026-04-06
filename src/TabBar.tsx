@@ -102,6 +102,7 @@ export const DefaultTabBar = forwardRef<ScrollView, TabBarProps>(
       new Map(),
     );
     const hasInitiallyScrolled = useRef(false);
+    const lastCenteredIndex = useRef<number | null>(null);
 
     // インジケーターの共有値
     const indicatorX = useSharedValue(0);
@@ -165,15 +166,22 @@ export const DefaultTabBar = forwardRef<ScrollView, TabBarProps>(
     useEffect(() => {
       if (!centerActive || !localScrollRef.current) return;
       const layout = tabLayouts.get(activeVirtualIndex);
-      if (layout) {
-        const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
-        const shouldAnimate = hasInitiallyScrolled.current;
-        hasInitiallyScrolled.current = true;
-        localScrollRef.current.scrollTo({
-          x: Math.max(0, scrollX),
-          animated: shouldAnimate,
-        });
-      }
+      if (!layout) return;
+
+      // fontWeight変更による onLayout 再発火で tabLayouts が更新されると
+      // この effect が2回発火する。2回目の scrollTo が1回目のアニメーションを
+      // キャンセルするため、同じインデックスへの重複スクロールをスキップする。
+      // (iOS は内部的にハンドルするが Android では顕著にジャンプして見える)
+      if (lastCenteredIndex.current === activeVirtualIndex) return;
+      lastCenteredIndex.current = activeVirtualIndex;
+
+      const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
+      const shouldAnimate = hasInitiallyScrolled.current;
+      hasInitiallyScrolled.current = true;
+      localScrollRef.current.scrollTo({
+        x: Math.max(0, scrollX),
+        animated: shouldAnimate,
+      });
     }, [activeVirtualIndex, tabLayouts, centerActive]);
 
     // インジケーターのアニメーションスタイル
