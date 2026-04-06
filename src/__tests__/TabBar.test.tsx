@@ -37,7 +37,7 @@ describe("DefaultTabBar", () => {
         />,
       );
 
-      const _tab2 = getByText("Tab 2");
+      const tab2 = getByText("Tab 2");
       expect(tab2).toBeTruthy();
       // アクティブなタブは異なるスタイルを持つはず
     });

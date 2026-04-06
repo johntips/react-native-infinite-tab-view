@@ -18,5 +18,12 @@
     "allowSyntheticDefaultImports": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "lib", "example", "src/**/*.test.ts", "src/**/*.test.tsx", "src/__tests__"]
+  "exclude": [
+    "node_modules",
+    "lib",
+    "example",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/__tests__"
+  ]
 }
