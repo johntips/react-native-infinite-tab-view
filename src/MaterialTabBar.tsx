@@ -22,7 +22,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { DEFAULT_TAB_ITEM_WIDTH } from "./constants";
+import { DEFAULT_TAB_ITEM_WIDTH, INDICATOR_TIMING_CONFIG } from "./constants";
 import type { TabBarProps } from "./types";
 
 export interface MaterialTabBarProps extends TabBarProps {
@@ -44,9 +44,6 @@ export interface MaterialTabBarProps extends TabBarProps {
 
 // 仮想ページ倍率
 const VIRTUAL_MULTIPLIER = 3;
-
-// インジケーターアニメーション設定
-const INDICATOR_TIMING_CONFIG = { duration: 200 };
 
 interface TabLayout {
   x: number;
