@@ -3,7 +3,6 @@ const path = require("path");
 
 const projectRoot = __dirname;
 const libraryRoot = path.resolve(projectRoot, "..");
-const monorepoRoot = path.resolve(libraryRoot, "..");
 
 const config = getDefaultConfig(projectRoot);
 
@@ -13,10 +12,10 @@ config.watchFolders = [libraryRoot];
 // Prevent Metro from walking up directories to find node_modules
 config.resolver.disableHierarchicalLookup = true;
 
-// Resolve from example's node_modules + monorepo root (pnpm hoists here)
+// Resolve from example's node_modules + library's node_modules (dev deps)
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),
-  path.resolve(monorepoRoot, "node_modules"),
+  path.resolve(libraryRoot, "node_modules"),
 ];
 
 // Force resolve library from src/ directly (skip lib/ build step for development)
