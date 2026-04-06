@@ -46,7 +46,6 @@ export interface TabBarProps {
   onTabPress: (index: number) => void;
   infiniteScroll: boolean;
   centerActive: boolean;
-  onScroll?: (event: any) => void;
   /** Container から渡される ScrollView ref */
   tabScrollRef?: RefObject<ScrollView>;
 }

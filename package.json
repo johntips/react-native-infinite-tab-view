@@ -1,6 +1,6 @@
 {
   "name": "react-native-infinite-tab-view",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Infinite scroll tab view with collapsible header for React Native - New Architecture ready, drop-in replacement for react-native-collapsible-tab-view",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -32,8 +32,8 @@
   "license": "MIT",
   "peerDependencies": {
     "@shopify/flash-list": ">=1.0.0",
-    "react": ">=18.0.0",
-    "react-native": ">=0.70.0",
+    "react": ">=19.2.0",
+    "react-native": ">=0.83.0",
     "react-native-pager-view": ">=6.0.0",
     "react-native-reanimated": ">=3.0.0"
   },

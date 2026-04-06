@@ -392,11 +392,11 @@ npm install react-native-pager-view  # if not already installed
 
 ## Requirements
 
-- React Native >= 0.70
-- React >= 18.0
+- Expo SDK 55+ (New Architecture only)
+- React Native >= 0.83
+- React >= 19.2
 - react-native-reanimated >= 3.0
 - react-native-pager-view >= 6.0
-- Expo SDK >= 51 (if using Expo)
 
 ## Contributing
 

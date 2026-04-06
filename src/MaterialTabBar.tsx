@@ -114,7 +114,6 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       activeIndex,
       onTabPress,
       infiniteScroll,
-      onScroll,
       activeColor = "#000",
       inactiveColor = "#666",
       scrollEnabled = true,
@@ -253,7 +252,6 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
         ref={ref}
         horizontal
         showsHorizontalScrollIndicator={false}
-        onScroll={onScroll}
         scrollEventThrottle={16}
         style={[styles.scrollContainer, style]}
         contentContainerStyle={styles.scrollContent}

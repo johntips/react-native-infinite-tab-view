@@ -11,32 +11,56 @@ describe("getCenterScrollPosition", () => {
     const tabItemWidth = 100;
 
     it("インデックス0: 左端（scrollX = 0）", () => {
-      const result = getCenterScrollPosition(0, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        0,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(0);
     });
 
     it("インデックス1: まだ左端（scrollX = 0）", () => {
-      const result = getCenterScrollPosition(1, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        1,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(0);
     });
 
     it("インデックス2: 中央配置開始（scrollX = 62.5）", () => {
-      const result = getCenterScrollPosition(2, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        2,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(62.5);
     });
 
     it("インデックス3: 中央配置（scrollX = 162.5）", () => {
-      const result = getCenterScrollPosition(3, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        3,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(162.5);
     });
 
     it("インデックス5: 中央配置（scrollX = 362.5）", () => {
-      const result = getCenterScrollPosition(5, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        5,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(362.5);
     });
 
     it("インデックス10: 中央配置（scrollX = 862.5）", () => {
-      const result = getCenterScrollPosition(10, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        10,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(862.5);
     });
   });
@@ -46,27 +70,47 @@ describe("getCenterScrollPosition", () => {
     const tabItemWidth = 100;
 
     it("インデックス0: 左端（scrollX = 0）", () => {
-      const result = getCenterScrollPosition(0, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        0,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(0);
     });
 
     it("インデックス1: まだ左端（scrollX = 0）", () => {
-      const result = getCenterScrollPosition(1, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        1,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(0);
     });
 
     it("インデックス2: 中央配置開始（scrollX = 70）", () => {
-      const result = getCenterScrollPosition(2, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        2,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(70);
     });
 
     it("インデックス5: 中央配置（scrollX = 370）", () => {
-      const result = getCenterScrollPosition(5, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        5,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(370);
     });
 
     it("インデックス10: 中央配置（scrollX = 870）", () => {
-      const result = getCenterScrollPosition(10, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        10,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(870);
     });
   });
@@ -76,22 +120,38 @@ describe("getCenterScrollPosition", () => {
     const tabItemWidth = 100;
 
     it("インデックス0: 左端（scrollX = 0）", () => {
-      const result = getCenterScrollPosition(0, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        0,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(0);
     });
 
     it("インデックス3: まだ左端（scrollX = 0）", () => {
-      const result = getCenterScrollPosition(3, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        3,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(0);
     });
 
     it("インデックス4: 中央配置開始（scrollX = 66）", () => {
-      const result = getCenterScrollPosition(4, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        4,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(66);
     });
 
     it("インデックス10: 中央配置（scrollX = 666）", () => {
-      const result = getCenterScrollPosition(10, uniformWidths(15, tabItemWidth), screenWidth);
+      const result = getCenterScrollPosition(
+        10,
+        uniformWidths(15, tabItemWidth),
+        screenWidth,
+      );
       expect(result).toBe(666);
     });
   });
@@ -100,7 +160,11 @@ describe("getCenterScrollPosition", () => {
     const screenWidth = 375;
 
     it("負のインデックス（インデックス-1）", () => {
-      const result = getCenterScrollPosition(-1, uniformWidths(15, 100), screenWidth);
+      const result = getCenterScrollPosition(
+        -1,
+        uniformWidths(15, 100),
+        screenWidth,
+      );
       expect(result).toBe(0);
     });
 
@@ -116,7 +180,11 @@ describe("getCenterScrollPosition", () => {
     });
 
     it("非常に大きいインデックス（インデックス1000）", () => {
-      const result = getCenterScrollPosition(1000, uniformWidths(1001, 100), 375);
+      const result = getCenterScrollPosition(
+        1000,
+        uniformWidths(1001, 100),
+        375,
+      );
       expect(result).toBe(99862.5);
     });
   });

@@ -9,17 +9,17 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "expo": "~54.0.30",
-    "expo-status-bar": "~3.0.9",
-    "react": "19.1.0",
-    "react-native": "0.81.5",
-    "react-native-infinite-tab-view": "file:..",
-    "@shopify/flash-list": "2.0.2"
+    "@shopify/flash-list": "2.0.2",
+    "expo": "~55.0.11",
+    "expo-status-bar": "~55.0.5",
+    "react": "19.2.0",
+    "react-native": "0.83.4",
+    "react-native-infinite-tab-view": "file:.."
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",
-    "@types/react": "~19.1.17",
-    "typescript": "~5.9.3"
+    "@types/react": "~19.2.10",
+    "typescript": "~5.9.2"
   },
   "private": true
 }
