@@ -3,13 +3,11 @@ import {
   Children,
   isValidElement,
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import {
-  Dimensions,
   type ScrollView as RNScrollView,
   StyleSheet,
   View,
@@ -18,14 +16,9 @@ import type { PagerViewOnPageSelectedEvent } from "react-native-pager-view";
 import PagerView from "react-native-pager-view";
 import { useSharedValue } from "react-native-reanimated";
 import { TabsProvider } from "./Context";
-import {
-  DEFAULT_TAB_ITEM_WIDTH,
-  SCREEN_WIDTH,
-  TAB_BAR_HEIGHT,
-} from "./constants";
+import { SCREEN_WIDTH, TAB_BAR_HEIGHT } from "./constants";
 import { DefaultTabBar } from "./TabBar";
 import type { TabsContainerProps } from "./types";
-import { getCenterScrollPosition } from "./utils";
 
 interface VirtualPage {
   /** 実タブのインデックス (0..tabs.length-1) */
@@ -64,8 +57,6 @@ export const Container: React.FC<TabsContainerProps> = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const prevActiveIndexRef = useRef(0);
   const tabScrollRef = useRef<RNScrollView>(null);
-  // タブバー用仮想インデックス（最短経路計算に使用）
-  const tabVirtualIndexRef = useRef(0);
 
   // PagerView refs
   const pagerRef = useRef<PagerView>(null);
@@ -74,19 +65,6 @@ export const Container: React.FC<TabsContainerProps> = ({
 
   // Reanimated SharedValue for scroll tracking (collapsible-tab-view compatibility)
   const scrollY = useSharedValue(0);
-
-  const isScrollingProgrammatically = useRef(false);
-  const hasTabInitialized = useRef(false);
-
-  // --- 無限スクロール用タブバー仮想ページ ---
-  // タブバーは従来通り ScrollView + 仮想ページ 3倍
-  const TAB_VIRTUAL_MULTIPLIER = 3;
-  const tabTotalVirtualPages = infiniteScroll
-    ? tabs.length * TAB_VIRTUAL_MULTIPLIER
-    : tabs.length;
-  const tabMiddleVirtualIndex = infiniteScroll
-    ? Math.floor(TAB_VIRTUAL_MULTIPLIER / 2) * tabs.length
-    : 0;
 
   // --- PagerView 用仮想ページ配列 ---
   // 無限スクロール時: [head clones] + [real] + [tail clones]
@@ -132,45 +110,7 @@ export const Container: React.FC<TabsContainerProps> = ({
     [onTabChange, tabs],
   );
 
-  // タブ中央配置（仮想インデックス対応）
-  const scrollTabToCenter = useCallback(
-    (index: number) => {
-      if (!tabBarCenterActive || !tabScrollRef.current) return;
-
-      let targetIndex = index;
-      if (infiniteScroll) {
-        const currentVirtualIndex = tabVirtualIndexRef.current;
-        const currentRealIndex = currentVirtualIndex % tabs.length;
-        const indexDiff = index - currentRealIndex;
-
-        // 最短経路で移動
-        targetIndex = currentVirtualIndex + indexDiff;
-
-        // 循環を考慮した最短経路
-        if (Math.abs(indexDiff) > tabs.length / 2) {
-          if (indexDiff > 0) {
-            targetIndex = currentVirtualIndex - (tabs.length - indexDiff);
-          } else {
-            targetIndex = currentVirtualIndex + (tabs.length + indexDiff);
-          }
-        }
-
-        tabVirtualIndexRef.current = targetIndex;
-      }
-
-      const scrollX = getCenterScrollPosition(
-        targetIndex,
-        [],
-        SCREEN_WIDTH,
-        DEFAULT_TAB_ITEM_WIDTH,
-      );
-      tabScrollRef.current.scrollTo({
-        x: scrollX,
-        animated: true,
-      });
-    },
-    [tabBarCenterActive, infiniteScroll, tabs.length],
-  );
+  // タブ中央配置は TabBar コンポーネント側で計測済みレイアウトを使って処理
 
   // --- PagerView イベントハンドラ ---
 
@@ -189,7 +129,6 @@ export const Container: React.FC<TabsContainerProps> = ({
       const prevIndex = prevActiveIndexRef.current;
       prevActiveIndexRef.current = realIndex;
       setActiveIndex(realIndex);
-      scrollTabToCenter(realIndex);
 
       if (realIndex !== prevIndex) {
         triggerTabChange(realIndex, prevIndex);
@@ -205,7 +144,6 @@ export const Container: React.FC<TabsContainerProps> = ({
       realStartIndex,
       infiniteScroll,
       tabs.length,
-      scrollTabToCenter,
       triggerTabChange,
     ],
   );
@@ -242,7 +180,6 @@ export const Container: React.FC<TabsContainerProps> = ({
       const prevIndex = prevActiveIndexRef.current;
       prevActiveIndexRef.current = normalized;
       setActiveIndex(normalized);
-      scrollTabToCenter(normalized);
 
       if (normalized !== prevIndex) {
         triggerTabChange(normalized, prevIndex);
@@ -259,7 +196,6 @@ export const Container: React.FC<TabsContainerProps> = ({
     },
     [
       normalizeIndex,
-      scrollTabToCenter,
       triggerTabChange,
       infiniteScroll,
       tabs.length,
@@ -267,85 +203,7 @@ export const Container: React.FC<TabsContainerProps> = ({
     ],
   );
 
-  // タブバースクロールハンドラー（エッジ検出とリセット）
-  const handleTabScroll = useCallback(
-    (event: any) => {
-      if (!infiniteScroll) return;
-      if (isScrollingProgrammatically.current) return;
-
-      const offsetX = event.nativeEvent.contentOffset.x;
-      const newVirtualIndex = Math.round(offsetX / DEFAULT_TAB_ITEM_WIDTH);
-
-      tabVirtualIndexRef.current = newVirtualIndex;
-
-      // エッジ検出とリセット
-      const edgeThreshold = tabs.length;
-
-      if (newVirtualIndex < edgeThreshold) {
-        const normalized = normalizeIndex(newVirtualIndex);
-        const targetVirtualIndex = tabMiddleVirtualIndex + normalized;
-        tabVirtualIndexRef.current = targetVirtualIndex;
-
-        requestAnimationFrame(() => {
-          isScrollingProgrammatically.current = true;
-          const scrollX = targetVirtualIndex * DEFAULT_TAB_ITEM_WIDTH;
-          tabScrollRef.current?.scrollTo({
-            x: scrollX,
-            y: 0,
-            animated: false,
-          });
-          requestAnimationFrame(() => {
-            isScrollingProgrammatically.current = false;
-          });
-        });
-      } else if (newVirtualIndex >= tabTotalVirtualPages - edgeThreshold) {
-        const normalized = normalizeIndex(newVirtualIndex);
-        const targetVirtualIndex = tabMiddleVirtualIndex + normalized;
-        tabVirtualIndexRef.current = targetVirtualIndex;
-
-        requestAnimationFrame(() => {
-          isScrollingProgrammatically.current = true;
-          const scrollX = targetVirtualIndex * DEFAULT_TAB_ITEM_WIDTH;
-          tabScrollRef.current?.scrollTo({
-            x: scrollX,
-            y: 0,
-            animated: false,
-          });
-          requestAnimationFrame(() => {
-            isScrollingProgrammatically.current = false;
-          });
-        });
-      }
-    },
-    [
-      infiniteScroll,
-      tabs.length,
-      tabTotalVirtualPages,
-      tabMiddleVirtualIndex,
-      normalizeIndex,
-    ],
-  );
-
-  // activeIndex変更時にタブを中央配置
-  useEffect(() => {
-    scrollTabToCenter(activeIndex);
-  }, [activeIndex, scrollTabToCenter]);
-
-  // タブバー初期スクロール位置設定（無限スクロール時）
-  useEffect(() => {
-    if (!hasTabInitialized.current && infiniteScroll && tabs.length > 0) {
-      hasTabInitialized.current = true;
-      tabVirtualIndexRef.current = tabMiddleVirtualIndex;
-
-      requestAnimationFrame(() => {
-        tabScrollRef.current?.scrollTo({
-          x: tabMiddleVirtualIndex * DEFAULT_TAB_ITEM_WIDTH,
-          y: 0,
-          animated: false,
-        });
-      });
-    }
-  }, [infiniteScroll, tabs.length, tabMiddleVirtualIndex]);
+  // タブバーのセンタリング・無限スクロールは TabBar 側で計測済みレイアウトを使って処理
 
   // scrollY を更新する関数（子コンポーネントから呼び出し用）
   const updateScrollY = useCallback(
@@ -430,7 +288,6 @@ export const Container: React.FC<TabsContainerProps> = ({
               onTabPress: handleTabPress,
               infiniteScroll,
               centerActive: tabBarCenterActive,
-              onScroll: handleTabScroll,
             })
           ) : (
             <DefaultTabBar
@@ -439,7 +296,6 @@ export const Container: React.FC<TabsContainerProps> = ({
               onTabPress={handleTabPress}
               infiniteScroll={infiniteScroll}
               centerActive={tabBarCenterActive}
-              onScroll={handleTabScroll}
               ref={tabScrollRef}
             />
           )}
