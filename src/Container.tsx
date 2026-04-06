@@ -44,7 +44,7 @@ export const Container: React.FC<TabsContainerProps> = ({
   const tabs = useMemo(() => {
     const tabList: Array<{ name: string; label: string }> = [];
     Children.forEach(children, (child) => {
-      if (isValidElement(child) && child.props.name && child.props.label) {
+      if (isValidElement<{ name: string; label: string }>(child) && child.props.name && child.props.label) {
         tabList.push({
           name: child.props.name,
           label: child.props.label,
@@ -247,7 +247,7 @@ export const Container: React.FC<TabsContainerProps> = ({
     return pages.map((page, pagerIndex) => {
       const child = childrenArray[page.realIndex];
 
-      if (isValidElement(child)) {
+      if (isValidElement<{ children: React.ReactNode }>(child)) {
         return (
           <View
             key={`pager-${page.isClone ? "clone" : "real"}-${pagerIndex}`}
