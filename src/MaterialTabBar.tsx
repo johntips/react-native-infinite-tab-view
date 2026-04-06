@@ -3,9 +3,11 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
+  Dimensions,
   type LayoutChangeEvent,
   ScrollView,
   type ScrollView as ScrollViewType,
@@ -24,6 +26,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { DEFAULT_TAB_ITEM_WIDTH, INDICATOR_TIMING_CONFIG } from "./constants";
 import type { TabBarProps } from "./types";
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
 
 export interface MaterialTabBarProps extends TabBarProps {
   /** アクティブタブのテキスト/インジケーター色 */
@@ -111,6 +115,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       activeIndex,
       onTabPress,
       infiniteScroll,
+      centerActive,
       activeColor = "#000",
       inactiveColor = "#666",
       scrollEnabled = true,
@@ -119,8 +124,25 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       style,
       tabStyle,
     },
-    ref,
+    forwardedRef,
   ) => {
+    const localScrollRef = useRef<ScrollViewType | null>(null);
+    const hasInitiallyScrolled = useRef(false);
+
+    // Merge forwarded ref and local ref
+    const setRef = useCallback(
+      (node: ScrollViewType | null) => {
+        localScrollRef.current = node;
+        if (typeof forwardedRef === "function") {
+          forwardedRef(node);
+        } else if (forwardedRef) {
+          (
+            forwardedRef as React.MutableRefObject<ScrollViewType | null>
+          ).current = node;
+        }
+      },
+      [forwardedRef],
+    );
     const totalVirtualTabs = infiniteScroll
       ? tabs.length * VIRTUAL_MULTIPLIER
       : tabs.length;
@@ -198,6 +220,21 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       }
     }, [activeVirtualIndex, tabLayouts, indicatorX, indicatorWidth]);
 
+    // activeIndex 変更時にアクティブタブを画面中央にスクロール
+    useEffect(() => {
+      if (!centerActive || !scrollEnabled || !localScrollRef.current) return;
+      const layout = tabLayouts.get(activeVirtualIndex);
+      if (layout) {
+        const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
+        const shouldAnimate = hasInitiallyScrolled.current;
+        hasInitiallyScrolled.current = true;
+        localScrollRef.current.scrollTo({
+          x: Math.max(0, scrollX),
+          animated: shouldAnimate,
+        });
+      }
+    }, [activeVirtualIndex, tabLayouts, centerActive, scrollEnabled]);
+
     // インジケーターのアニメーションスタイル
     const animatedIndicatorStyle = useAnimatedStyle(() => ({
       transform: [{ translateX: indicatorX.value }],
@@ -246,7 +283,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
 
     return (
       <ScrollView
-        ref={ref}
+        ref={setRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         scrollEventThrottle={16}

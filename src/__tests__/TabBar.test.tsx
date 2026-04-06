@@ -37,7 +37,7 @@ describe("DefaultTabBar", () => {
         />,
       );
 
-      const tab2 = getByText("Tab 2");
+      const _tab2 = getByText("Tab 2");
       expect(tab2).toBeTruthy();
       // アクティブなタブは異なるスタイルを持つはず
     });
@@ -157,7 +157,7 @@ describe("DefaultTabBar", () => {
         />,
       );
 
-      const tab2 = getByText("Tab 2");
+      const _tab2 = getByText("Tab 2");
       // ここでfireEvent.pressを使いたいが、react-native-webではクリックイベントが必要
       // 実際のテストでは、onPressが正しく設定されているかを確認
     });

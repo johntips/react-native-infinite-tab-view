@@ -44,7 +44,11 @@ export const Container: React.FC<TabsContainerProps> = ({
   const tabs = useMemo(() => {
     const tabList: Array<{ name: string; label: string }> = [];
     Children.forEach(children, (child) => {
-      if (isValidElement<{ name: string; label: string }>(child) && child.props.name && child.props.label) {
+      if (
+        isValidElement<{ name: string; label: string }>(child) &&
+        child.props.name &&
+        child.props.label
+      ) {
         tabList.push({
           name: child.props.name,
           label: child.props.label,
@@ -139,13 +143,7 @@ export const Container: React.FC<TabsContainerProps> = ({
         pendingJumpIndexRef.current = realStartIndex + realIndex;
       }
     },
-    [
-      pages,
-      realStartIndex,
-      infiniteScroll,
-      tabs.length,
-      triggerTabChange,
-    ],
+    [pages, realStartIndex, infiniteScroll, tabs.length, triggerTabChange],
   );
 
   // onPageScrollStateChanged: スクロール状態が変わったときに呼ばれる

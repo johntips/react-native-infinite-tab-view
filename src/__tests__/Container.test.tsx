@@ -132,7 +132,7 @@ describe("Container", () => {
 
     describe("仮想ページ生成", () => {
       it("VIRTUAL_MULTIPLIER=3で3倍のページを生成（infiniteScroll=true）", () => {
-        const { container, getAllByText } = render(
+        const { getAllByText } = render(
           <Container infiniteScroll={true}>
             <Tab name="tab1" label="Tab 1">
               <Text>Content 1</Text>

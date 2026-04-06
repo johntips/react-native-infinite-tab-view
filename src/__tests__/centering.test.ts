@@ -57,13 +57,9 @@ const getRealisticWidths = () =>
   NEWS_CATEGORIES.map((cat) => REALISTIC_TAB_WIDTHS[cat] ?? 80);
 
 // 3倍仮想化のタブ幅を生成
-const tripleWidths = (widths: number[]) => [
-  ...widths,
-  ...widths,
-  ...widths,
-];
+const tripleWidths = (widths: number[]) => [...widths, ...widths, ...widths];
 
-const VIRTUAL_MULTIPLIER = 3;
+const _VIRTUAL_MULTIPLIER = 3;
 
 describe("computeCenterScrollX", () => {
   describe("基本動作", () => {
@@ -236,11 +232,7 @@ describe("実際のタブ構成でのセンタリング（統合テスト）", (
 
     it("計測済みレイアウトでセンタリング位置が正しい", () => {
       const layout = layouts.get(virtualIndex)!;
-      const scrollX = computeCenterScrollX(
-        layout.x,
-        layout.width,
-        screenWidth,
-      );
+      const scrollX = computeCenterScrollX(layout.x, layout.width, screenWidth);
       // スクロール後、タブの中心は画面中央にある
       const tabCenterOnScreen = layout.x + layout.width / 2 - scrollX;
       expect(tabCenterOnScreen).toBeCloseTo(screenWidth / 2, 5);
@@ -261,11 +253,7 @@ describe("実際のタブ構成でのセンタリング（統合テスト）", (
 
     it("計測済みレイアウトで正しくセンタリング", () => {
       const layout = layouts.get(virtualIndex)!;
-      const scrollX = computeCenterScrollX(
-        layout.x,
-        layout.width,
-        screenWidth,
-      );
+      const scrollX = computeCenterScrollX(layout.x, layout.width, screenWidth);
       const tabCenterOnScreen = layout.x + layout.width / 2 - scrollX;
       expect(tabCenterOnScreen).toBeCloseTo(screenWidth / 2, 5);
     });
@@ -285,11 +273,7 @@ describe("実際のタブ構成でのセンタリング（統合テスト）", (
 
     it("計測済みレイアウトで正しくセンタリング", () => {
       const layout = layouts.get(virtualIndex)!;
-      const scrollX = computeCenterScrollX(
-        layout.x,
-        layout.width,
-        screenWidth,
-      );
+      const scrollX = computeCenterScrollX(layout.x, layout.width, screenWidth);
       const tabCenterOnScreen = layout.x + layout.width / 2 - scrollX;
       expect(tabCenterOnScreen).toBeCloseTo(screenWidth / 2, 5);
     });
@@ -298,11 +282,7 @@ describe("実際のタブ構成でのセンタリング（統合テスト）", (
   describe("全20タブのセンタリング精度", () => {
     it("全タブが画面中央に正確にセンタリングされる", () => {
       for (let i = 0; i < NEWS_CATEGORIES.length; i++) {
-        const vi = computeActiveVirtualIndex(
-          i,
-          NEWS_CATEGORIES.length,
-          true,
-        );
+        const vi = computeActiveVirtualIndex(i, NEWS_CATEGORIES.length, true);
         const layout = layouts.get(vi)!;
         const scrollX = computeCenterScrollX(
           layout.x,
@@ -310,10 +290,7 @@ describe("実際のタブ構成でのセンタリング（統合テスト）", (
           screenWidth,
         );
         const tabCenterOnScreen = layout.x + layout.width / 2 - scrollX;
-        expect(tabCenterOnScreen).toBeCloseTo(
-          screenWidth / 2,
-          5,
-        );
+        expect(tabCenterOnScreen).toBeCloseTo(screenWidth / 2, 5);
       }
     });
 
@@ -326,11 +303,7 @@ describe("実際のタブ構成でのセンタリング（統合テスト）", (
 
       let maxDifference = 0;
       for (let i = 0; i < NEWS_CATEGORIES.length; i++) {
-        const vi = computeActiveVirtualIndex(
-          i,
-          NEWS_CATEGORIES.length,
-          true,
-        );
+        const vi = computeActiveVirtualIndex(i, NEWS_CATEGORIES.length, true);
 
         const measuredLayout = layouts.get(vi)!;
         const hardcodedLayout = hardcoded100Layouts.get(vi)!;
@@ -360,8 +333,7 @@ describe("実際のタブ構成でのセンタリング（統合テスト）", (
 describe("ハードコード幅 vs 計測幅のズレ検証（回帰テスト）", () => {
   const screenWidth = 393;
   const tabWidths = getRealisticWidths();
-  const avgWidth =
-    tabWidths.reduce((a, b) => a + b, 0) / tabWidths.length;
+  const avgWidth = tabWidths.reduce((a, b) => a + b, 0) / tabWidths.length;
 
   it("平均タブ幅は 100px ではない", () => {
     expect(avgWidth).not.toBe(100);
@@ -393,11 +365,7 @@ describe("ハードコード幅 vs 計測幅のズレ検証（回帰テスト）
     for (let i = 0; i < NEWS_CATEGORIES.length; i++) {
       const vi = computeActiveVirtualIndex(i, NEWS_CATEGORIES.length, true);
       const layout = layouts.get(vi)!;
-      const scrollX = computeCenterScrollX(
-        layout.x,
-        layout.width,
-        screenWidth,
-      );
+      const scrollX = computeCenterScrollX(layout.x, layout.width, screenWidth);
 
       // タブ中心が画面中央に来ることを検証
       const tabCenter = layout.x + layout.width / 2;
@@ -423,11 +391,7 @@ describe("無限スクロールOFFでのセンタリング", () => {
   it("全タブが正しくセンタリング（先頭タブはクランプ）", () => {
     for (let i = 0; i < NEWS_CATEGORIES.length; i++) {
       const layout = layouts.get(i)!;
-      const scrollX = computeCenterScrollX(
-        layout.x,
-        layout.width,
-        screenWidth,
-      );
+      const scrollX = computeCenterScrollX(layout.x, layout.width, screenWidth);
       expect(scrollX).toBeGreaterThanOrEqual(0);
 
       if (scrollX > 0) {
