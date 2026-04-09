@@ -8,6 +8,8 @@ import {
   useState,
 } from "react";
 import {
+  InteractionManager,
+  Platform,
   type ScrollView as RNScrollView,
   StyleSheet,
   View,
@@ -67,6 +69,10 @@ export const Container: React.FC<TabsContainerProps> = ({
   const pagerRef = useRef<PagerView>(null);
   const isJumpingRef = useRef(false);
   const pendingJumpIndexRef = useRef<number | null>(null);
+
+  // Issue 1 & 2: スクロール状態追跡（ジャンプ安全性向上）
+  const pageScrollStateRef = useRef<"idle" | "dragging" | "settling">("idle");
+  const isUserDraggingRef = useRef(false);
 
   // Reanimated SharedValue for scroll tracking (collapsible-tab-view compatibility)
   const scrollY = useSharedValue(0);
@@ -140,8 +146,11 @@ export const Container: React.FC<TabsContainerProps> = ({
       }
 
       // クローンページの場合、対応するrealページへのジャンプを予約
+      // Issue 2: ユーザーがドラッグ中はジャンプ予約をスキップ（state desync 防止）
       if (page.isClone && infiniteScroll && tabs.length > 1) {
-        pendingJumpIndexRef.current = realStartIndex + realIndex;
+        if (!isUserDraggingRef.current) {
+          pendingJumpIndexRef.current = realStartIndex + realIndex;
+        }
       }
     },
     [pages, realStartIndex, infiniteScroll, tabs.length, triggerTabChange],
@@ -153,21 +162,55 @@ export const Container: React.FC<TabsContainerProps> = ({
     (e: {
       nativeEvent: { pageScrollState: "idle" | "dragging" | "settling" };
     }) => {
-      if (e.nativeEvent.pageScrollState !== "idle") return;
-      if (isJumpingRef.current) return;
+      const state = e.nativeEvent.pageScrollState;
+      pageScrollStateRef.current = state;
+
+      // Issue 2: ドラッグ開始時にペンディングジャンプをキャンセル（state desync 防止）
+      if (state === "dragging") {
+        isUserDraggingRef.current = true;
+        pendingJumpIndexRef.current = null;
+        return;
+      }
+      if (state === "settling") {
+        return;
+      }
+
+      // state === "idle"
+      isUserDraggingRef.current = false;
+      if (isJumpingRef.current) {
+        isJumpingRef.current = false;
+        return;
+      }
 
       const jumpIndex = pendingJumpIndexRef.current;
       if (jumpIndex === null) return;
 
+      // Issue 2: idle 直前に再度 dragging になっていないか再チェック
+      if (pageScrollStateRef.current !== "idle") return;
+
       isJumpingRef.current = true;
       pendingJumpIndexRef.current = null;
 
-      requestAnimationFrame(() => {
-        pagerRef.current?.setPageWithoutAnimation(jumpIndex);
+      const executeJump = () => {
+        // Issue 1: try-catch で ViewPager2 recycling crash を防止
+        try {
+          pagerRef.current?.setPageWithoutAnimation(jumpIndex);
+        } catch {
+          // Android ViewPager2 の "Scrapped or attached views may not be recycled" を握りつぶす
+        }
         requestAnimationFrame(() => {
           isJumpingRef.current = false;
         });
-      });
+      };
+
+      // Issue 1: Android では InteractionManager で ViewPager2 のリサイクル完了を待つ
+      if (Platform.OS === "android") {
+        InteractionManager.runAfterInteractions(() => {
+          requestAnimationFrame(executeJump);
+        });
+      } else {
+        requestAnimationFrame(executeJump);
+      }
     },
     [],
   );
