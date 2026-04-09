@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-04-09
+
+### Fixed
+
+- **Android ViewPager2 recycling crash**: 高速スワイプ中にクローン境界ジャンプが ViewPager2 の RecyclerView リサイクルと衝突し `IllegalArgumentException` が発生する問題を修正。`InteractionManager.runAfterInteractions` でリサイクル完了を待機、`setPageWithoutAnimation` を try-catch でラップ
+- **PagerView state desync**: 高速スワイプ中に `setPageWithoutAnimation` がユーザージェスチャーと競合し、表示タブと内部 state が乖離する問題を修正。`isUserDraggingRef` でドラッグ中のジャンプを抑制、ドラッグ開始時に `pendingJumpIndexRef` をクリア
+
 ## [2.3.0] - 2026-04-07
 
 ### Added
