@@ -340,6 +340,7 @@ function CustomTabBar({ tabs, activeIndex, onTabPress }: TabBarProps) {
 | `headerContainerStyle` | `StyleProp<ViewStyle>` | - | Header wrapper style |
 | `tabBarContainerStyle` | `StyleProp<ViewStyle>` | - | Tab bar wrapper style |
 | `offscreenPageLimit` | `number` | `1` | PagerView offscreen pages (1=3 pages, 2=5 pages) |
+| `lazy` | `boolean` | `false` | Only mount tab content when nearby (reduces JS thread load for heavy tabs) |
 | `debug` | `boolean` | `false` | Enable debug logging (nearby/active/unmounted transitions) |
 | `onDebugLog` | `(event: DebugLogEvent) => void` | - | Debug log callback for app-side logging |
 

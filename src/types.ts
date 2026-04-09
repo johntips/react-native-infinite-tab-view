@@ -53,6 +53,12 @@ export interface TabsContainerProps {
    * 1 = 3ページ（prev/current/next）、2 = 5ページ、etc.
    */
   offscreenPageLimit?: number;
+  /**
+   * Lazy mount: nearby でないタブのコンテンツをマウントしない（デフォルト: false）
+   * true にすると、アクティブ + offscreenPageLimit 範囲内のタブのみ children をレンダリング。
+   * 一度 nearby になったタブはアンマウントせず維持する（React state 保持のため）。
+   */
+  lazy?: boolean;
   /** デバッグモード: コンソール + onDebugLog にログ出力 */
   debug?: boolean;
   /** デバッグログコールバック: アプリ側でログを受け取る */

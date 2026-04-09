@@ -523,4 +523,80 @@ describe("Container", () => {
       expect(container.firstChild).toBeTruthy();
     });
   });
+
+  describe("lazy mount", () => {
+    it("lazy=true の場合、nearby でないタブのコンテンツはレンダリングされない", () => {
+      const { queryByText } = render(
+        <Container lazy={true} infiniteScroll={false} offscreenPageLimit={1}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+          <Tab name="tab3" label="Tab 3">
+            <Text>Content 3</Text>
+          </Tab>
+          <Tab name="tab4" label="Tab 4">
+            <Text>Content 4</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // activeIndex=0, offscreenPageLimit=1 → nearby=[0,1]
+      // tab1(idx=0) と tab2(idx=1) のコンテンツはレンダリングされる
+      expect(queryByText("Content 1")).toBeTruthy();
+      expect(queryByText("Content 2")).toBeTruthy();
+      // tab3(idx=2) と tab4(idx=3) はレンダリングされない
+      expect(queryByText("Content 3")).toBeFalsy();
+      expect(queryByText("Content 4")).toBeFalsy();
+    });
+
+    it("lazy=false（デフォルト）の場合、全タブのコンテンツがレンダリングされる", () => {
+      const { queryByText } = render(
+        <Container lazy={false} infiniteScroll={false} offscreenPageLimit={1}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+          <Tab name="tab3" label="Tab 3">
+            <Text>Content 3</Text>
+          </Tab>
+          <Tab name="tab4" label="Tab 4">
+            <Text>Content 4</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // 全タブのコンテンツがレンダリングされる
+      expect(queryByText("Content 1")).toBeTruthy();
+      expect(queryByText("Content 2")).toBeTruthy();
+      expect(queryByText("Content 3")).toBeTruthy();
+      expect(queryByText("Content 4")).toBeTruthy();
+    });
+
+    it("lazy=true で一度 nearby になったタブはマウントされたまま維持される", () => {
+      // 初回: activeIndex=0 → nearby=[0,1] → tab1, tab2 がマウント
+      // tab3 は nearby になったことがないのでマウントされない
+      const { queryByText } = render(
+        <Container lazy={true} infiniteScroll={false} offscreenPageLimit={1}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+          <Tab name="tab3" label="Tab 3">
+            <Text>Content 3</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // 一度マウントされた tab1, tab2 は維持される
+      expect(queryByText("Content 1")).toBeTruthy();
+      expect(queryByText("Content 2")).toBeTruthy();
+    });
+  });
 });

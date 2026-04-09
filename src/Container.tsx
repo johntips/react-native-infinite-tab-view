@@ -47,6 +47,7 @@ export const Container: React.FC<TabsContainerProps> = ({
   tabBarContainerStyle,
   allowHeaderOverscroll: _allowHeaderOverscroll = false,
   offscreenPageLimit = 1,
+  lazy = false,
   debug = false,
   onDebugLog,
 }) => {
@@ -411,12 +412,26 @@ export const Container: React.FC<TabsContainerProps> = ({
     ],
   );
 
+  // Lazy mount: 一度 nearby になった realIndex を追跡（アンマウントしない）
+  const mountedIndexesRef = useRef<Set<number>>(new Set());
+  if (lazy) {
+    for (const idx of nearbyIndexes) {
+      mountedIndexesRef.current.add(idx);
+    }
+  }
+
   // コンテンツビュー（PagerView の children として生成）
   const contentViews = useMemo(() => {
     const childrenArray = Children.toArray(children);
+    const mounted = mountedIndexesRef.current;
 
     return pages.map((page, pagerIndex) => {
       const child = childrenArray[page.realIndex];
+
+      // lazy モード: まだ一度も nearby になっていない realIndex は空 View
+      if (lazy && !mounted.has(page.realIndex)) {
+        return <View key={`pager-lazy-${pagerIndex}`} style={styles.page} />;
+      }
 
       if (isValidElement<{ children: React.ReactNode }>(child)) {
         return (
@@ -430,7 +445,8 @@ export const Container: React.FC<TabsContainerProps> = ({
       }
       return <View key={`pager-empty-${pagerIndex}`} style={styles.page} />;
     });
-  }, [children, pages]);
+    // nearbyIndexes を deps に含めて、新しいタブが nearby になった時に再生成
+  }, [children, pages, lazy, nearbyIndexes]);
 
   // 初期ページ（PagerView の initialPage）
   const initialPage = infiniteScroll && tabs.length > 1 ? realStartIndex : 0;
