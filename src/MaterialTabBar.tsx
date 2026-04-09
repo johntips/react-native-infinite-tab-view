@@ -19,6 +19,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
+  runOnJS,
   type SharedValue,
   useAnimatedReaction,
   useAnimatedStyle,
@@ -241,7 +242,26 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
     // 中央セットのオフセットを加算して仮想インデックスに変換
     const centerOffset = infiniteScroll ? tabs.length : 0;
 
+    // タブバー中央寄せ: scrollProgress からリアルタイムで ScrollView をスクロール
+    // 毎フレーム呼ぶと重いので、前回の scrollTo 位置と差が大きい時のみ実行
+    const lastScrollToX = useRef(0);
+    const scrollTabBarToCenter = useCallback(
+      (centerX: number) => {
+        if (!scrollEnabled || !localScrollRef.current) return;
+        // 前回との差が小さい場合はスキップ（throttle 代わり）
+        if (Math.abs(centerX - lastScrollToX.current) < 2) return;
+        lastScrollToX.current = centerX;
+        const scrollX = centerX - SCREEN_WIDTH / 2;
+        localScrollRef.current.scrollTo({
+          x: Math.max(0, scrollX),
+          animated: false,
+        });
+      },
+      [scrollEnabled],
+    );
+
     // scrollProgress が変化するたびにインジケーター位置を即座に更新（UI thread）
+    // + タブバー中央寄せをリアルタイムで追従
     useAnimatedReaction(
       () => scrollProgress?.value,
       (progress) => {
@@ -264,7 +284,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
         const nextX = nextIdx < xs.length ? (xs[nextIdx] ?? 0) : currentX;
         const nextW = nextIdx < xs.length ? (widths[nextIdx] ?? 0) : currentW;
 
-        // インジケーターはタブ幅の80%（左右10%マージン）
+        // インジケーター位置の補間
         const currentInset = currentW * 0.1;
         const nextInset = nextW * 0.1;
 
@@ -279,8 +299,21 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
 
         indicatorX.value = interpX;
         indicatorWidth.value = interpW;
+
+        // タブバー中央寄せ: インジケーターの中央を画面中央に合わせる
+        if (centerActive) {
+          const indicatorCenter = interpX + interpW / 2;
+          runOnJS(scrollTabBarToCenter)(indicatorCenter);
+        }
       },
-      [scrollProgress, tabLayoutXs, tabLayoutWidths, centerOffset],
+      [
+        scrollProgress,
+        tabLayoutXs,
+        tabLayoutWidths,
+        centerOffset,
+        centerActive,
+        scrollTabBarToCenter,
+      ],
     );
 
     // インジケーター初期化 + センタリングを rAF flush 後に実行

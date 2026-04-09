@@ -16,6 +16,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
+  runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
@@ -203,8 +204,20 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
       [flushLayouts],
     );
 
-    // scrollProgress ベースのリアルタイムインジケーター
+    // scrollProgress ベースのリアルタイムインジケーター + タブバー中央寄せ
     const centerOffset = infiniteScroll ? tabs.length : 0;
+
+    const lastScrollToX = useRef(0);
+    const scrollTabBarToCenter = useCallback((centerX: number) => {
+      if (!localScrollRef.current) return;
+      if (Math.abs(centerX - lastScrollToX.current) < 2) return;
+      lastScrollToX.current = centerX;
+      const scrollX = centerX - SCREEN_WIDTH / 2;
+      localScrollRef.current.scrollTo({
+        x: Math.max(0, scrollX),
+        animated: false,
+      });
+    }, []);
 
     useAnimatedReaction(
       () => scrollProgress?.value,
@@ -228,8 +241,21 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
 
         indicatorX.value = currentX + (nextX - currentX) * fraction;
         indicatorWidth.value = currentW + (nextW - currentW) * fraction;
+
+        // タブバー中央寄せ
+        if (centerActive) {
+          const indicatorCenter = indicatorX.value + indicatorWidth.value / 2;
+          runOnJS(scrollTabBarToCenter)(indicatorCenter);
+        }
       },
-      [scrollProgress, tabLayoutXs, tabLayoutWidths, centerOffset],
+      [
+        scrollProgress,
+        tabLayoutXs,
+        tabLayoutWidths,
+        centerOffset,
+        centerActive,
+        scrollTabBarToCenter,
+      ],
     );
 
     // インジケーター初期化 + センタリング（rAF flush 後に実行）

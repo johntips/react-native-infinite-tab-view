@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2026-04-10
+
+### Performance
+
+- **タブバー中央寄せを scrollProgress 連動に**: useEffect 経由（2-3フレーム遅延）→ useAnimatedReaction + runOnJS（1フレーム遅延）に改善。スワイプ中にタブバーが滑らかに追従
+- scrollTo のスロットル: 差分が2px未満の場合はスキップ（不要な scrollTo を排除）
+
 ## [2.6.1] - 2026-04-10
 
 ### Fixed
