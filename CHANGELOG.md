@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-04-10
+
+### Fixed
+
+- **setActiveIndex の idle 遅延を revert**: スワイプ中にタブのアクティブ色・インジケーターがずれる不具合を修正。`lazy={true}` により re-render 対象が3タブに限定されているため、即時 `setActiveIndex` でもパフォーマンスは十分
+- `onTabChange` の idle 遅延は維持（アプリ側の Haptics / setState をスワイプ中に走らせない）
+
 ## [2.6.0] - 2026-04-10
 
 ### Added

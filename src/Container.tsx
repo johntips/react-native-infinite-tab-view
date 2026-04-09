@@ -155,18 +155,16 @@ export const Container: React.FC<TabsContainerProps> = ({
 
   // --- PagerView イベントハンドラ ---
 
-  // 1-B: activeIndex の state 更新を idle まで遅延するためのバッファ
-  // スワイプ中は ref のみ更新し、idle 時に一括で setActiveIndex を呼ぶ
-  // → スワイプ中の re-render をゼロにする
-  const pendingActiveIndexRef = useRef<number | null>(null);
-  // 1-C: onTabChange も idle まで遅延
+  // 1-C: onTabChange を idle まで遅延（Haptics / Zustand setState 等のアプリ側処理を
+  // スワイプ中に走らせないため。setActiveIndex は即実行して正確性を維持）
   const pendingTabChangeRef = useRef<{
     newIndex: number;
     prevIndex: number;
   } | null>(null);
 
   // onPageSelected: ページが確定したときに呼ばれる
-  // 1-B: setActiveIndex を即実行せず、idle まで遅延（スワイプ中の re-render を排除）
+  // setActiveIndex は即実行（タブ色・インジケーターの正確性のため）
+  // onTabChange のみ idle まで遅延
   const handlePageSelected = useCallback(
     (e: PagerViewOnPageSelectedEvent) => {
       if (isJumpingRef.current) return;
@@ -179,10 +177,10 @@ export const Container: React.FC<TabsContainerProps> = ({
       const prevIndex = prevActiveIndexRef.current;
       prevActiveIndexRef.current = realIndex;
 
-      // state 更新を idle まで遅延（スワイプ中は re-render しない）
-      pendingActiveIndexRef.current = realIndex;
+      // activeIndex は即更新（タブのアクティブ色 + インジケーター位置の正確性のため）
+      setActiveIndex(realIndex);
 
-      // onTabChange も idle まで遅延
+      // onTabChange は idle まで遅延（アプリ側の重い処理をスワイプ中に走らせない）
       if (realIndex !== prevIndex) {
         pendingTabChangeRef.current = { newIndex: realIndex, prevIndex };
       }
@@ -246,13 +244,6 @@ export const Container: React.FC<TabsContainerProps> = ({
       // state === "idle"
       isUserDraggingRef.current = false;
       isTabPressingRef.current = false;
-
-      // 1-B: idle 時に遅延した activeIndex を flush（1回の re-render で済む）
-      const pendingIndex = pendingActiveIndexRef.current;
-      if (pendingIndex !== null) {
-        pendingActiveIndexRef.current = null;
-        setActiveIndex(pendingIndex);
-      }
 
       // 1-C: idle 時に遅延した onTabChange を flush
       const pendingChange = pendingTabChangeRef.current;
