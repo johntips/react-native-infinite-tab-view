@@ -14,7 +14,10 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import type { PagerViewOnPageSelectedEvent } from "react-native-pager-view";
+import type {
+  PagerViewOnPageScrollEvent,
+  PagerViewOnPageSelectedEvent,
+} from "react-native-pager-view";
 import PagerView from "react-native-pager-view";
 import { useSharedValue } from "react-native-reanimated";
 import { TabsProvider } from "./Context";
@@ -76,6 +79,10 @@ export const Container: React.FC<TabsContainerProps> = ({
 
   // Reanimated SharedValue for scroll tracking (collapsible-tab-view compatibility)
   const scrollY = useSharedValue(0);
+
+  // PagerView のスクロール進捗（realIndex ベースの連続値）
+  // 例: タブ0→1 スワイプ中に 0.0〜1.0、タブ2→3 で 2.0〜3.0
+  const scrollProgress = useSharedValue(0);
 
   // --- PagerView 用仮想ページ配列 ---
   // 無限スクロール時: [head clones] + [real] + [tail clones]
@@ -156,6 +163,40 @@ export const Container: React.FC<TabsContainerProps> = ({
     [pages, realStartIndex, infiniteScroll, tabs.length, triggerTabChange],
   );
 
+  // タブタップ中フラグ（onPageScroll の scrollProgress 更新をスキップ）
+  // タブタップ → setPage でアニメーションが走ると onPageScroll も発火するが、
+  // この間は useEffect の withTiming に任せ、二重更新の競合を防ぐ
+  const isTabPressingRef = useRef(false);
+
+  // onPageScroll: スワイプ中にリアルタイムで呼ばれる
+  // position + offset を realIndex ベースの連続値に変換して scrollProgress に書き込む
+  const handlePageScroll = useCallback(
+    (e: PagerViewOnPageScrollEvent) => {
+      if (isJumpingRef.current) return;
+      if (isTabPressingRef.current) return;
+
+      const { position, offset } = e.nativeEvent;
+      const page = pages[position];
+      if (!page) return;
+
+      // 次のページの realIndex を取得（スワイプ方向の補間に必要）
+      const nextPage = pages[position + 1];
+      const currentReal = page.realIndex;
+      const nextReal = nextPage ? nextPage.realIndex : currentReal;
+
+      // realIndex ベースの連続値に変換
+      // 通常: currentReal + offset（例: 0 + 0.5 = 0.5）
+      // ラップアラウンド（最後→最初）: 特別処理
+      if (nextReal < currentReal && offset > 0) {
+        // 例: realIndex 5→0 のラップ: tabs.length-1 + offset で表現
+        scrollProgress.value = currentReal + offset;
+      } else {
+        scrollProgress.value = currentReal + (nextReal - currentReal) * offset;
+      }
+    },
+    [pages, scrollProgress],
+  );
+
   // onPageScrollStateChanged: スクロール状態が変わったときに呼ばれる
   // idle になったタイミングでクローン→realジャンプを実行
   const handlePageScrollStateChanged = useCallback(
@@ -177,6 +218,7 @@ export const Container: React.FC<TabsContainerProps> = ({
 
       // state === "idle"
       isUserDraggingRef.current = false;
+      isTabPressingRef.current = false; // タブタップ由来のアニメーション完了
       if (isJumpingRef.current) {
         isJumpingRef.current = false;
         return;
@@ -230,9 +272,11 @@ export const Container: React.FC<TabsContainerProps> = ({
       setActiveIndex(normalized);
       triggerTabChange(normalized, prevIndex);
 
+      // タブタップ中は scrollProgress 更新をスキップ（withTiming と競合防止）
+      isTabPressingRef.current = true;
+
       // PagerView のページ切替
       if (infiniteScroll && tabs.length > 1) {
-        // realページ範囲内の対応するインデックスに移動
         const targetPagerIndex = realStartIndex + normalized;
         pagerRef.current?.setPage(targetPagerIndex);
       } else {
@@ -334,6 +378,7 @@ export const Container: React.FC<TabsContainerProps> = ({
               onTabPress: handleTabPress,
               infiniteScroll,
               centerActive: tabBarCenterActive,
+              scrollProgress,
             })
           ) : (
             <DefaultTabBar
@@ -342,6 +387,7 @@ export const Container: React.FC<TabsContainerProps> = ({
               onTabPress={handleTabPress}
               infiniteScroll={infiniteScroll}
               centerActive={tabBarCenterActive}
+              scrollProgress={scrollProgress}
               ref={tabScrollRef}
             />
           )}
@@ -354,6 +400,7 @@ export const Container: React.FC<TabsContainerProps> = ({
             style={styles.pagerView}
             initialPage={initialPage}
             offscreenPageLimit={1}
+            onPageScroll={handlePageScroll}
             onPageSelected={handlePageSelected}
             onPageScrollStateChanged={handlePageScrollStateChanged}
           >

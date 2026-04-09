@@ -2,7 +2,7 @@ export interface NewsItem {
   id: string;
   title: string;
   description: string;
-  imageColor: string;
+  imageUrl: string;
   category: string;
 }
 
@@ -30,46 +30,30 @@ export const NEWS_CATEGORIES = [
   "Lifestyle",
 ];
 
-// カテゴリごとの色定義
-const CATEGORY_COLORS: Record<string, string> = {
-  Tech: "#000000",
-  Business: "#333333",
-  Sports: "#666666",
-  Entertainment: "#999999",
-  Science: "#1a1a1a",
-  Health: "#2d2d2d",
-  Politics: "#404040",
-  World: "#4d4d4d",
-  Travel: "#5a5a5a",
-  Food: "#6d6d6d",
-  Fashion: "#7a7a7a",
-  Music: "#8d8d8d",
-  Gaming: "#9a9a9a",
-  Education: "#a6a6a6",
-  Finance: "#b3b3b3",
-  Automotive: "#bfbfbf",
-  "Real Estate": "#cccccc",
-  Environment: "#d9d9d9",
-  Arts: "#e6e6e6",
-  Lifestyle: "#f2f2f2",
+// 高解像度画像URL（picsum.photos — 毎回異なる画像を返す）
+// seed パラメータでカテゴリ+インデックスごとに固定画像を生成
+const getImageUrl = (category: string, index: number): string => {
+  const seed = `${category.toLowerCase().replace(/\s/g, "-")}-${index}`;
+  // 800x600の高解像度画像（実際のアプリに近い負荷）
+  return `https://picsum.photos/seed/${seed}/800/600`;
 };
 
-// ニュースアイテム生成関数
+// ニュースアイテム生成関数（各カテゴリ30件 — スクロール負荷テスト）
 const generateNewsItems = (category: string, count: number): NewsItem[] => {
   return Array.from({ length: count }, (_, index) => ({
-    id: `${category.toLowerCase()}-${index + 1}`,
+    id: `${category.toLowerCase().replace(/\s/g, "-")}-${index + 1}`,
     title: `${category} News Title ${index + 1}`,
-    description: `This is a detailed description for ${category} news item ${index + 1}. It provides comprehensive information about the latest developments in the ${category.toLowerCase()} sector.`,
-    imageColor: CATEGORY_COLORS[category] || "#000000",
+    description: `This is a detailed description for ${category} news item ${index + 1}. It provides comprehensive information about the latest developments in the ${category.toLowerCase()} sector. Heavy images are loaded lazily with fade-in animation to demonstrate 60fps tab swiping performance.`,
+    imageUrl: getImageUrl(category, index + 1),
     category,
   }));
 };
 
-// 全カテゴリのニュースアイテムを生成（各10個、合計200アイテム）
+// 全カテゴリのニュースアイテムを生成（各30個、合計600アイテム）
 export const ALL_NEWS_ITEMS = NEWS_CATEGORIES.reduce<
   Record<string, NewsItem[]>
 >((acc, category) => {
-  acc[category] = generateNewsItems(category, 10);
+  acc[category] = generateNewsItems(category, 30);
   return acc;
 }, {});
 

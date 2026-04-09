@@ -18,7 +18,7 @@ export { useActiveTabIndex, useCurrentTabScrollY, useTabs } from "./hooks";
 
 // Components
 export { MaterialTabBar } from "./MaterialTabBar";
-export { DefaultTabBar } from "./TabBar";
+export { DefaultTabBar, type DefaultTabBarProps } from "./TabBar";
 
 // Types
 export * from "./types";

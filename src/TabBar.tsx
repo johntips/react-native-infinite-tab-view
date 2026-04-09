@@ -4,17 +4,19 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import {
   Dimensions,
   type LayoutChangeEvent,
   ScrollView,
+  type StyleProp,
   StyleSheet,
   Text,
   TouchableOpacity,
+  type ViewStyle,
 } from "react-native";
 import Animated, {
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -48,11 +50,15 @@ const TabItem = React.memo(
   ({
     tab,
     isActive,
+    activeColor,
+    inactiveColor,
     onPress,
     onLayout,
   }: {
     tab: VirtualTab;
     isActive: boolean;
+    activeColor: string;
+    inactiveColor: string;
     onPress: () => void;
     onLayout: (event: LayoutChangeEvent) => void;
   }) => {
@@ -64,7 +70,11 @@ const TabItem = React.memo(
         activeOpacity={0.7}
       >
         <Text
-          style={[styles.tabLabel, isActive && styles.tabLabelActive]}
+          style={[
+            styles.tabLabel,
+            { color: isActive ? activeColor : inactiveColor },
+            isActive && styles.tabLabelActiveBold,
+          ]}
           numberOfLines={1}
           ellipsizeMode="tail"
         >
@@ -77,9 +87,28 @@ const TabItem = React.memo(
 
 TabItem.displayName = "TabItem";
 
-export const DefaultTabBar = forwardRef<ScrollView, TabBarProps>(
+export interface DefaultTabBarProps extends TabBarProps {
+  /** アクティブタブのテキスト/インジケーター色（デフォルト: "#000"） */
+  activeColor?: string;
+  /** 非アクティブタブのテキスト色（デフォルト: "#999"） */
+  inactiveColor?: string;
+  /** インジケーターのスタイル */
+  indicatorStyle?: StyleProp<ViewStyle>;
+}
+
+export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
   (
-    { tabs, activeIndex, onTabPress, infiniteScroll, centerActive },
+    {
+      tabs,
+      activeIndex,
+      onTabPress,
+      infiniteScroll,
+      centerActive,
+      scrollProgress,
+      activeColor = "#000",
+      inactiveColor = "#999",
+      indicatorStyle: indicatorStyleProp,
+    },
     forwardedRef,
   ) => {
     const localScrollRef = useRef<ScrollView | null>(null);
@@ -98,15 +127,21 @@ export const DefaultTabBar = forwardRef<ScrollView, TabBarProps>(
       [forwardedRef],
     );
 
-    const [tabLayouts, setTabLayouts] = useState<Map<number, TabLayout>>(
-      new Map(),
-    );
     const hasInitiallyScrolled = useRef(false);
     const lastCenteredIndex = useRef<number | null>(null);
 
     // インジケーターの共有値
     const indicatorX = useSharedValue(0);
     const indicatorWidth = useSharedValue(DEFAULT_TAB_ITEM_WIDTH);
+
+    // タブレイアウト情報を SharedValue 化（UI thread でリアルタイム補間するため）
+    const tabLayoutXs = useSharedValue<number[]>([]);
+    const tabLayoutWidths = useSharedValue<number[]>([]);
+
+    // タブレイアウトを useRef + rAF バッチで管理（state 更新を完全排除）
+    const tabLayoutsRef = useRef<Map<number, TabLayout>>(new Map());
+    const layoutFlushScheduled = useRef(false);
+    const layoutFlushCallbackRef = useRef<(() => void) | null>(null);
 
     // 仮想タブ生成
     const virtualTabs = useMemo(() => {
@@ -137,52 +172,122 @@ export const DefaultTabBar = forwardRef<ScrollView, TabBarProps>(
       return centerOffset + activeIndex;
     }, [activeIndex, infiniteScroll, tabs.length]);
 
-    // タブレイアウトの計測ハンドラ
+    // rAF バッチ flush
+    const flushLayouts = useCallback(() => {
+      const map = tabLayoutsRef.current;
+      const xs: number[] = [];
+      const widths: number[] = [];
+      for (let i = 0; i < virtualTabs.length; i++) {
+        const layout = map.get(i);
+        xs.push(layout?.x ?? 0);
+        widths.push(layout?.width ?? DEFAULT_TAB_ITEM_WIDTH);
+      }
+      tabLayoutXs.value = xs;
+      tabLayoutWidths.value = widths;
+      layoutFlushScheduled.current = false;
+      if (layoutFlushCallbackRef.current) {
+        layoutFlushCallbackRef.current();
+      }
+    }, [virtualTabs.length, tabLayoutXs, tabLayoutWidths]);
+
+    // タブレイアウトの計測ハンドラ（re-render なし）
     const handleTabLayout = useCallback(
       (virtualIndex: number, event: LayoutChangeEvent) => {
         const { x, width } = event.nativeEvent.layout;
-        setTabLayouts((prev) => {
-          const next = new Map(prev);
-          next.set(virtualIndex, { x, width });
-          return next;
-        });
+        tabLayoutsRef.current.set(virtualIndex, { x, width });
+        if (!layoutFlushScheduled.current) {
+          layoutFlushScheduled.current = true;
+          requestAnimationFrame(flushLayouts);
+        }
       },
-      [],
+      [flushLayouts],
     );
 
-    // activeIndex 変更時にインジケーターをアニメーション
-    useEffect(() => {
-      const layout = tabLayouts.get(activeVirtualIndex);
-      if (layout) {
-        indicatorX.value = withTiming(layout.x, INDICATOR_TIMING_CONFIG);
-        indicatorWidth.value = withTiming(
-          layout.width,
-          INDICATOR_TIMING_CONFIG,
-        );
-      }
-    }, [activeVirtualIndex, tabLayouts, indicatorX, indicatorWidth]);
+    // scrollProgress ベースのリアルタイムインジケーター
+    const centerOffset = infiniteScroll ? tabs.length : 0;
 
-    // activeIndex 変更時にアクティブタブを画面中央にスクロール
-    useEffect(() => {
-      if (!centerActive || !localScrollRef.current) return;
-      const layout = tabLayouts.get(activeVirtualIndex);
+    useAnimatedReaction(
+      () => scrollProgress?.value,
+      (progress) => {
+        if (progress === undefined || progress === null) return;
+        const xs = tabLayoutXs.value;
+        const widths = tabLayoutWidths.value;
+        if (xs.length === 0) return;
+
+        const virtualProgress = progress + centerOffset;
+        const currentIdx = Math.floor(virtualProgress);
+        const nextIdx = currentIdx + 1;
+        const fraction = virtualProgress - currentIdx;
+
+        if (currentIdx < 0 || currentIdx >= xs.length) return;
+
+        const currentX = xs[currentIdx] ?? 0;
+        const currentW = widths[currentIdx] ?? 0;
+        const nextX = nextIdx < xs.length ? (xs[nextIdx] ?? 0) : currentX;
+        const nextW = nextIdx < xs.length ? (widths[nextIdx] ?? 0) : currentW;
+
+        indicatorX.value = currentX + (nextX - currentX) * fraction;
+        indicatorWidth.value = currentW + (nextW - currentW) * fraction;
+      },
+      [scrollProgress, tabLayoutXs, tabLayoutWidths, centerOffset],
+    );
+
+    // インジケーター初期化 + センタリング（rAF flush 後に実行）
+    const hasInitialIndicator = useRef(false);
+
+    const updateIndicatorAndCenter = useCallback(() => {
+      const layout = tabLayoutsRef.current.get(activeVirtualIndex);
       if (!layout) return;
 
-      // fontWeight変更による onLayout 再発火で tabLayouts が更新されると
-      // この effect が2回発火する。2回目の scrollTo が1回目のアニメーションを
-      // キャンセルするため、同じインデックスへの重複スクロールをスキップする。
-      // (iOS は内部的にハンドルするが Android では顕著にジャンプして見える)
-      if (lastCenteredIndex.current === activeVirtualIndex) return;
-      lastCenteredIndex.current = activeVirtualIndex;
+      if (!hasInitialIndicator.current) {
+        indicatorX.value = layout.x;
+        indicatorWidth.value = layout.width;
+        hasInitialIndicator.current = true;
+      }
 
-      const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
-      const shouldAnimate = hasInitiallyScrolled.current;
-      hasInitiallyScrolled.current = true;
-      localScrollRef.current.scrollTo({
-        x: Math.max(0, scrollX),
-        animated: shouldAnimate,
-      });
-    }, [activeVirtualIndex, tabLayouts, centerActive]);
+      if (centerActive && localScrollRef.current) {
+        if (lastCenteredIndex.current !== activeVirtualIndex) {
+          lastCenteredIndex.current = activeVirtualIndex;
+          const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
+          const shouldAnimate = hasInitiallyScrolled.current;
+          hasInitiallyScrolled.current = true;
+          localScrollRef.current.scrollTo({
+            x: Math.max(0, scrollX),
+            animated: shouldAnimate,
+          });
+        }
+      }
+    }, [activeVirtualIndex, centerActive, indicatorX, indicatorWidth]);
+
+    layoutFlushCallbackRef.current = updateIndicatorAndCenter;
+
+    // activeIndex 変更時（タブタップ）: scrollProgress の有無に関係なく withTiming で移動
+    useEffect(() => {
+      if (!hasInitialIndicator.current) return;
+
+      const layout = tabLayoutsRef.current.get(activeVirtualIndex);
+      if (!layout) return;
+
+      indicatorX.value = withTiming(layout.x, INDICATOR_TIMING_CONFIG);
+      indicatorWidth.value = withTiming(layout.width, INDICATOR_TIMING_CONFIG);
+
+      if (centerActive && localScrollRef.current) {
+        if (lastCenteredIndex.current !== activeVirtualIndex) {
+          lastCenteredIndex.current = activeVirtualIndex;
+          const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
+          localScrollRef.current.scrollTo({
+            x: Math.max(0, scrollX),
+            animated: true,
+          });
+        }
+      }
+    }, [
+      activeVirtualIndex,
+      centerActive,
+      indicatorX,
+      indicatorWidth,
+      scrollProgress,
+    ]);
 
     // インジケーターのアニメーションスタイル
     const indicatorStyle = useAnimatedStyle(() => ({
@@ -206,13 +311,22 @@ export const DefaultTabBar = forwardRef<ScrollView, TabBarProps>(
               key={`${tab.name}-${tab.virtualIndex}`}
               tab={tab}
               isActive={isActive}
+              activeColor={activeColor}
+              inactiveColor={inactiveColor}
               onPress={() => onTabPress(tab.realIndex)}
               onLayout={(e) => handleTabLayout(tab.virtualIndex, e)}
             />
           );
         })}
         {/* スライドインジケーター */}
-        <Animated.View style={[styles.activeIndicator, indicatorStyle]} />
+        <Animated.View
+          style={[
+            styles.activeIndicator,
+            { backgroundColor: activeColor },
+            indicatorStyleProp,
+            indicatorStyle,
+          ]}
+        />
       </ScrollView>
     );
   },
@@ -239,19 +353,15 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#999",
   },
-  tabLabelActive: {
-    fontSize: 14,
+  tabLabelActiveBold: {
     fontWeight: "700",
-    color: "#000",
   },
   activeIndicator: {
     position: "absolute",
     bottom: 0,
     left: 0,
     height: 3,
-    backgroundColor: "#000",
     borderRadius: 1.5,
   },
 });

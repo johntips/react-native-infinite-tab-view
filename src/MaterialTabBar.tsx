@@ -4,7 +4,6 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import {
   Dimensions,
@@ -20,6 +19,8 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
+  type SharedValue,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -44,6 +45,8 @@ export interface MaterialTabBarProps extends TabBarProps {
   style?: StyleProp<ViewStyle>;
   /** タブアイテムのスタイル */
   tabStyle?: StyleProp<ViewStyle>;
+  /** PagerView スクロール進捗（Container から自動で渡される） */
+  scrollProgress?: SharedValue<number>;
 }
 
 // 仮想ページ倍率
@@ -123,6 +126,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       labelStyle,
       style,
       tabStyle,
+      scrollProgress,
     },
     forwardedRef,
   ) => {
@@ -153,10 +157,6 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       ? DEFAULT_TAB_ITEM_WIDTH
       : `${100 / tabs.length}%`;
 
-    const [tabLayouts, setTabLayouts] = useState<Map<number, TabLayout>>(
-      new Map(),
-    );
-
     // インジケーターの共有値
     const indicatorX = useSharedValue(0);
     const indicatorWidth = useSharedValue(
@@ -164,6 +164,16 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
         ? tabWidth * 0.8
         : DEFAULT_TAB_ITEM_WIDTH * 0.8,
     );
+
+    // タブレイアウト情報を SharedValue 化（UI thread でリアルタイム補間するため）
+    const tabLayoutXs = useSharedValue<number[]>([]);
+    const tabLayoutWidths = useSharedValue<number[]>([]);
+
+    // タブレイアウトを useRef + rAF バッチで管理（state 更新を完全排除）
+    // onLayout は60回発火するが、re-render は0回。rAF で1回だけ SharedValue に flush。
+    const tabLayoutsRef = useRef<Map<number, TabLayout>>(new Map());
+    const layoutFlushScheduled = useRef(false);
+    const layoutFlushCallbackRef = useRef<(() => void) | null>(null);
 
     // 仮想タブを生成
     const virtualTabs = useMemo(() => {
@@ -191,56 +201,165 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       return centerOffset + activeIndex;
     }, [activeIndex, infiniteScroll, tabs.length]);
 
-    // タブレイアウトの計測ハンドラ
+    // rAF バッチ flush: ref のレイアウトデータを SharedValue に一括書き込み
+    const flushLayouts = useCallback(() => {
+      const map = tabLayoutsRef.current;
+      const xs: number[] = [];
+      const widths: number[] = [];
+      const defaultW =
+        typeof tabWidth === "number" ? tabWidth : DEFAULT_TAB_ITEM_WIDTH;
+      for (let i = 0; i < virtualTabs.length; i++) {
+        const layout = map.get(i);
+        xs.push(layout?.x ?? 0);
+        widths.push(layout?.width ?? defaultW);
+      }
+      tabLayoutXs.value = xs;
+      tabLayoutWidths.value = widths;
+      layoutFlushScheduled.current = false;
+
+      // インジケーター初期化・センタリングのコールバックを実行
+      if (layoutFlushCallbackRef.current) {
+        layoutFlushCallbackRef.current();
+      }
+    }, [virtualTabs.length, tabWidth, tabLayoutXs, tabLayoutWidths]);
+
+    // タブレイアウトの計測ハンドラ（re-render なし、rAF で1回だけ flush）
     const handleTabLayout = useCallback(
       (virtualIndex: number, event: LayoutChangeEvent) => {
         const { x, width } = event.nativeEvent.layout;
-        setTabLayouts((prev) => {
-          const next = new Map(prev);
-          next.set(virtualIndex, { x, width });
-          return next;
-        });
+        tabLayoutsRef.current.set(virtualIndex, { x, width });
+        if (!layoutFlushScheduled.current) {
+          layoutFlushScheduled.current = true;
+          requestAnimationFrame(flushLayouts);
+        }
       },
-      [],
+      [flushLayouts],
     );
 
-    // activeIndex 変更時にインジケーターをアニメーション
-    useEffect(() => {
-      const layout = tabLayouts.get(activeVirtualIndex);
-      if (layout) {
-        // インジケーターはタブ幅の80%（左右10%マージン）
-        const inset = layout.width * 0.1;
-        indicatorX.value = withTiming(
-          layout.x + inset,
-          INDICATOR_TIMING_CONFIG,
-        );
-        indicatorWidth.value = withTiming(
-          layout.width - inset * 2,
-          INDICATOR_TIMING_CONFIG,
-        );
-      }
-    }, [activeVirtualIndex, tabLayouts, indicatorX, indicatorWidth]);
+    // scrollProgress ベースのリアルタイムインジケーター
+    // scrollProgress は realIndex ベース（0.0〜tabs.length-1）なので
+    // 中央セットのオフセットを加算して仮想インデックスに変換
+    const centerOffset = infiniteScroll ? tabs.length : 0;
 
-    // activeIndex 変更時にアクティブタブを画面中央にスクロール
-    useEffect(() => {
-      if (!centerActive || !scrollEnabled || !localScrollRef.current) return;
-      const layout = tabLayouts.get(activeVirtualIndex);
+    // scrollProgress が変化するたびにインジケーター位置を即座に更新（UI thread）
+    useAnimatedReaction(
+      () => scrollProgress?.value,
+      (progress) => {
+        if (progress === undefined || progress === null) return;
+        const xs = tabLayoutXs.value;
+        const widths = tabLayoutWidths.value;
+        if (xs.length === 0) return;
+
+        // realIndex → virtualIndex（中央セット）
+        const virtualProgress = progress + centerOffset;
+
+        const currentIdx = Math.floor(virtualProgress);
+        const nextIdx = currentIdx + 1;
+        const fraction = virtualProgress - currentIdx;
+
+        if (currentIdx < 0 || currentIdx >= xs.length) return;
+
+        const currentX = xs[currentIdx] ?? 0;
+        const currentW = widths[currentIdx] ?? 0;
+        const nextX = nextIdx < xs.length ? (xs[nextIdx] ?? 0) : currentX;
+        const nextW = nextIdx < xs.length ? (widths[nextIdx] ?? 0) : currentW;
+
+        // インジケーターはタブ幅の80%（左右10%マージン）
+        const currentInset = currentW * 0.1;
+        const nextInset = nextW * 0.1;
+
+        const interpX =
+          currentX +
+          currentInset +
+          (nextX + nextInset - (currentX + currentInset)) * fraction;
+        const interpW =
+          currentW -
+          currentInset * 2 +
+          (nextW - nextInset * 2 - (currentW - currentInset * 2)) * fraction;
+
+        indicatorX.value = interpX;
+        indicatorWidth.value = interpW;
+      },
+      [scrollProgress, tabLayoutXs, tabLayoutWidths, centerOffset],
+    );
+
+    // インジケーター初期化 + センタリングを rAF flush 後に実行
+    const hasInitialIndicator = useRef(false);
+
+    // rAF flush 後のコールバック: インジケーター初期化 + センタリング
+    const updateIndicatorAndCenter = useCallback(() => {
+      const layout = tabLayoutsRef.current.get(activeVirtualIndex);
       if (!layout) return;
 
-      // fontWeight変更による onLayout 再発火で tabLayouts が更新されると
-      // この effect が2回発火する。2回目の scrollTo が1回目のアニメーションを
-      // キャンセルするため、同じインデックスへの重複スクロールをスキップする。
-      if (lastCenteredIndex.current === activeVirtualIndex) return;
-      lastCenteredIndex.current = activeVirtualIndex;
+      const inset = layout.width * 0.1;
+      const targetX = layout.x + inset;
+      const targetW = layout.width - inset * 2;
 
-      const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
-      const shouldAnimate = hasInitiallyScrolled.current;
-      hasInitiallyScrolled.current = true;
-      localScrollRef.current.scrollTo({
-        x: Math.max(0, scrollX),
-        animated: shouldAnimate,
-      });
-    }, [activeVirtualIndex, tabLayouts, centerActive, scrollEnabled]);
+      if (!hasInitialIndicator.current) {
+        indicatorX.value = targetX;
+        indicatorWidth.value = targetW;
+        hasInitialIndicator.current = true;
+      }
+
+      // センタリング
+      if (centerActive && scrollEnabled && localScrollRef.current) {
+        if (lastCenteredIndex.current !== activeVirtualIndex) {
+          lastCenteredIndex.current = activeVirtualIndex;
+          const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
+          const shouldAnimate = hasInitiallyScrolled.current;
+          hasInitiallyScrolled.current = true;
+          localScrollRef.current.scrollTo({
+            x: Math.max(0, scrollX),
+            animated: shouldAnimate,
+          });
+        }
+      }
+    }, [
+      activeVirtualIndex,
+      centerActive,
+      scrollEnabled,
+      indicatorX,
+      indicatorWidth,
+    ]);
+
+    // flush 後のコールバックを登録
+    layoutFlushCallbackRef.current = updateIndicatorAndCenter;
+
+    // activeIndex 変更時（タブタップ）: withTiming でインジケーター移動 + センタリング
+    // scrollProgress の有無に関係なく常に withTiming で移動する。
+    // タブタップ時は isTabPressingRef=true で handlePageScroll がスキップされるため、
+    // scrollProgress は更新されず useAnimatedReaction も動かない。
+    useEffect(() => {
+      if (!hasInitialIndicator.current) return;
+
+      const layout = tabLayoutsRef.current.get(activeVirtualIndex);
+      if (!layout) return;
+
+      const inset = layout.width * 0.1;
+      indicatorX.value = withTiming(layout.x + inset, INDICATOR_TIMING_CONFIG);
+      indicatorWidth.value = withTiming(
+        layout.width - inset * 2,
+        INDICATOR_TIMING_CONFIG,
+      );
+
+      // センタリング
+      if (centerActive && scrollEnabled && localScrollRef.current) {
+        if (lastCenteredIndex.current !== activeVirtualIndex) {
+          lastCenteredIndex.current = activeVirtualIndex;
+          const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
+          localScrollRef.current.scrollTo({
+            x: Math.max(0, scrollX),
+            animated: true,
+          });
+        }
+      }
+    }, [
+      activeVirtualIndex,
+      centerActive,
+      scrollEnabled,
+      indicatorX,
+      indicatorWidth,
+    ]);
 
     // インジケーターのアニメーションスタイル
     const animatedIndicatorStyle = useAnimatedStyle(() => ({

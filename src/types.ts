@@ -7,6 +7,7 @@ import type {
   ViewStyle,
 } from "react-native";
 import type PagerView from "react-native-pager-view";
+import type { SharedValue } from "react-native-reanimated";
 
 export interface TabChangeEvent {
   tabName: string;
@@ -50,6 +51,12 @@ export interface TabBarProps {
   centerActive: boolean;
   /** Container から渡される ScrollView ref */
   tabScrollRef?: RefObject<ScrollView>;
+  /**
+   * PagerView のスクロール進捗（連続値）。
+   * 値は realIndex + offset（例: タブ0→1 のスワイプ中に 0.0〜1.0 の間を取る）。
+   * TabBar はこの値を使ってインジケーター位置をリアルタイム補間する。
+   */
+  scrollProgress?: SharedValue<number>;
 }
 
 export interface TabsContextValue {

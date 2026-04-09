@@ -31,6 +31,7 @@ vi.mock("react-native-reanimated", () => {
     },
     useSharedValue: (init: number) => ({ value: init }),
     useAnimatedStyle: (fn: () => object) => fn(),
+    useAnimatedReaction: () => {},
     withTiming: (value: number) => value,
     withSpring: (value: number) => value,
     Easing: {

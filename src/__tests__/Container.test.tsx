@@ -250,4 +250,70 @@ describe("Container", () => {
       expect(onTabChange).not.toHaveBeenCalled();
     });
   });
+
+  describe("scrollProgress", () => {
+    it("renderTabBar に scrollProgress が渡される", () => {
+      let receivedScrollProgress: unknown;
+
+      render(
+        <Container
+          renderTabBar={(props) => {
+            receivedScrollProgress = props.scrollProgress;
+            return (
+              <View>
+                {props.tabs.map((tab) => (
+                  <Text key={tab.name}>{tab.label}</Text>
+                ))}
+              </View>
+            );
+          }}
+        >
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+        </Container>,
+      );
+
+      expect(receivedScrollProgress).toBeDefined();
+      expect(typeof (receivedScrollProgress as { value: number }).value).toBe(
+        "number",
+      );
+    });
+
+    it("scrollProgress の初期値は 0", () => {
+      let scrollProgressValue = -1;
+
+      render(
+        <Container
+          renderTabBar={(props) => {
+            scrollProgressValue = (props.scrollProgress as { value: number })
+              .value;
+            return <View />;
+          }}
+        >
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+        </Container>,
+      );
+
+      expect(scrollProgressValue).toBe(0);
+    });
+  });
+
+  describe("onFocusedTabPress", () => {
+    it("onFocusedTabPress が prop として受け付けられる", () => {
+      const onFocusedTabPress = vi.fn();
+
+      const { container } = render(
+        <Container onFocusedTabPress={onFocusedTabPress}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+        </Container>,
+      );
+
+      expect(container.firstChild).toBeTruthy();
+    });
+  });
 });

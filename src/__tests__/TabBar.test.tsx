@@ -215,6 +215,112 @@ describe("DefaultTabBar", () => {
     });
   });
 
+  describe("カスタムカラー", () => {
+    it("デフォルトカラー（activeColor=#000, inactiveColor=#999）でレンダリングされる", () => {
+      const { getByText } = render(
+        <DefaultTabBar
+          tabs={mockTabs}
+          activeIndex={0}
+          onTabPress={vi.fn()}
+          infiniteScroll={false}
+          centerActive={true}
+        />,
+      );
+
+      expect(getByText("Tab 1")).toBeTruthy();
+    });
+
+    it("カスタム activeColor / inactiveColor を受け付ける", () => {
+      const { getByText } = render(
+        <DefaultTabBar
+          tabs={mockTabs}
+          activeIndex={1}
+          onTabPress={vi.fn()}
+          infiniteScroll={false}
+          centerActive={true}
+          activeColor="#F3BE21"
+          inactiveColor="#86888A"
+        />,
+      );
+
+      expect(getByText("Tab 2")).toBeTruthy();
+    });
+
+    it("カスタム indicatorStyle を受け付ける", () => {
+      const { container } = render(
+        <DefaultTabBar
+          tabs={mockTabs}
+          activeIndex={0}
+          onTabPress={vi.fn()}
+          infiniteScroll={false}
+          centerActive={true}
+          indicatorStyle={{ height: 4 }}
+        />,
+      );
+
+      expect(container.firstChild).toBeTruthy();
+    });
+  });
+
+  describe("scrollProgress", () => {
+    it("scrollProgress なしでもレンダリングされる", () => {
+      const { getByText } = render(
+        <DefaultTabBar
+          tabs={mockTabs}
+          activeIndex={0}
+          onTabPress={vi.fn()}
+          infiniteScroll={false}
+          centerActive={true}
+        />,
+      );
+
+      expect(getByText("Tab 1")).toBeTruthy();
+    });
+
+    it("scrollProgress ありでもレンダリングされる", () => {
+      const scrollProgress = { value: 0 };
+      const { getByText } = render(
+        <DefaultTabBar
+          tabs={mockTabs}
+          activeIndex={0}
+          onTabPress={vi.fn()}
+          infiniteScroll={false}
+          centerActive={true}
+          scrollProgress={scrollProgress as any}
+        />,
+      );
+
+      expect(getByText("Tab 1")).toBeTruthy();
+    });
+
+    it("scrollProgress ありで activeIndex 変更時にクラッシュしない", () => {
+      const scrollProgress = { value: 0 };
+      const { rerender, getByText } = render(
+        <DefaultTabBar
+          tabs={mockTabs}
+          activeIndex={0}
+          onTabPress={vi.fn()}
+          infiniteScroll={false}
+          centerActive={true}
+          scrollProgress={scrollProgress as any}
+        />,
+      );
+
+      rerender(
+        <DefaultTabBar
+          tabs={mockTabs}
+          activeIndex={2}
+          onTabPress={vi.fn()}
+          infiniteScroll={false}
+          centerActive={true}
+          scrollProgress={scrollProgress as any}
+        />,
+      );
+
+      expect(getByText("Tab 3")).toBeTruthy();
+    });
+  });
+
   describe("タブ幅の固定", () => {
     it("全てのタブが同じ幅になっている", () => {
       const { getAllByText } = render(
