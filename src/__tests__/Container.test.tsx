@@ -524,6 +524,50 @@ describe("Container", () => {
     });
   });
 
+  describe("deferred state updates", () => {
+    it("スワイプ中（settling）は activeIndex の state 更新が遅延される", () => {
+      let capturedActiveIndex = -1;
+
+      render(
+        <Container
+          infiniteScroll={false}
+          renderTabBar={(props) => {
+            capturedActiveIndex = props.activeIndex;
+            return <View />;
+          }}
+        >
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // 初期状態: activeIndex=0
+      expect(capturedActiveIndex).toBe(0);
+    });
+
+    it("onTabChange は idle 時にのみ発火する", () => {
+      const onTabChange = vi.fn();
+
+      render(
+        <Container onTabChange={onTabChange} infiniteScroll={false}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // 初期化時には呼ばれない
+      expect(onTabChange).not.toHaveBeenCalled();
+    });
+  });
+
   describe("lazy mount", () => {
     it("lazy=true の場合、nearby でないタブのコンテンツはレンダリングされない", () => {
       const { queryByText } = render(

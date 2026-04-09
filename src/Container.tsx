@@ -121,6 +121,10 @@ export const Container: React.FC<TabsContainerProps> = ({
   // realページの開始インデックス（PagerView 内での位置）
   const realStartIndex = infiniteScroll && tabs.length > 1 ? tabs.length : 0;
 
+  // 1-D: pages ルックアップテーブル（onPageScroll で毎フレーム参照するため事前生成）
+  // pagerIndex → realIndex のマッピング
+  const pageRealIndexes = useMemo(() => pages.map((p) => p.realIndex), [pages]);
+
   // インデックス正規化
   const normalizeIndex = useCallback(
     (index: number): number => {
@@ -151,7 +155,18 @@ export const Container: React.FC<TabsContainerProps> = ({
 
   // --- PagerView イベントハンドラ ---
 
+  // 1-B: activeIndex の state 更新を idle まで遅延するためのバッファ
+  // スワイプ中は ref のみ更新し、idle 時に一括で setActiveIndex を呼ぶ
+  // → スワイプ中の re-render をゼロにする
+  const pendingActiveIndexRef = useRef<number | null>(null);
+  // 1-C: onTabChange も idle まで遅延
+  const pendingTabChangeRef = useRef<{
+    newIndex: number;
+    prevIndex: number;
+  } | null>(null);
+
   // onPageSelected: ページが確定したときに呼ばれる
+  // 1-B: setActiveIndex を即実行せず、idle まで遅延（スワイプ中の re-render を排除）
   const handlePageSelected = useCallback(
     (e: PagerViewOnPageSelectedEvent) => {
       if (isJumpingRef.current) return;
@@ -161,25 +176,25 @@ export const Container: React.FC<TabsContainerProps> = ({
       if (!page) return;
 
       const realIndex = page.realIndex;
-
-      // 実タブのインデックスを更新
       const prevIndex = prevActiveIndexRef.current;
       prevActiveIndexRef.current = realIndex;
-      setActiveIndex(realIndex);
 
+      // state 更新を idle まで遅延（スワイプ中は re-render しない）
+      pendingActiveIndexRef.current = realIndex;
+
+      // onTabChange も idle まで遅延
       if (realIndex !== prevIndex) {
-        triggerTabChange(realIndex, prevIndex);
+        pendingTabChangeRef.current = { newIndex: realIndex, prevIndex };
       }
 
       // クローンページの場合、対応するrealページへのジャンプを予約
-      // Issue 2: ユーザーがドラッグ中はジャンプ予約をスキップ（state desync 防止）
       if (page.isClone && infiniteScroll && tabs.length > 1) {
         if (!isUserDraggingRef.current) {
           pendingJumpIndexRef.current = realStartIndex + realIndex;
         }
       }
     },
-    [pages, realStartIndex, infiniteScroll, tabs.length, triggerTabChange],
+    [pages, realStartIndex, infiniteScroll, tabs.length],
   );
 
   // タブタップ中フラグ（onPageScroll の scrollProgress 更新をスキップ）
@@ -187,33 +202,26 @@ export const Container: React.FC<TabsContainerProps> = ({
   // この間は useEffect の withTiming に任せ、二重更新の競合を防ぐ
   const isTabPressingRef = useRef(false);
 
-  // onPageScroll: スワイプ中にリアルタイムで呼ばれる
-  // position + offset を realIndex ベースの連続値に変換して scrollProgress に書き込む
+  // onPageScroll: スワイプ中にリアルタイムで呼ばれる（毎フレーム）
+  // 1-D: ルックアップテーブルで配列参照を O(1) に最適化
   const handlePageScroll = useCallback(
     (e: PagerViewOnPageScrollEvent) => {
-      if (isJumpingRef.current) return;
-      if (isTabPressingRef.current) return;
+      if (isJumpingRef.current || isTabPressingRef.current) return;
 
       const { position, offset } = e.nativeEvent;
-      const page = pages[position];
-      if (!page) return;
+      const currentReal = pageRealIndexes[position];
+      if (currentReal === undefined) return;
 
-      // 次のページの realIndex を取得（スワイプ方向の補間に必要）
-      const nextPage = pages[position + 1];
-      const currentReal = page.realIndex;
-      const nextReal = nextPage ? nextPage.realIndex : currentReal;
+      const nextReal = pageRealIndexes[position + 1] ?? currentReal;
 
       // realIndex ベースの連続値に変換
-      // 通常: currentReal + offset（例: 0 + 0.5 = 0.5）
-      // ラップアラウンド（最後→最初）: 特別処理
       if (nextReal < currentReal && offset > 0) {
-        // 例: realIndex 5→0 のラップ: tabs.length-1 + offset で表現
         scrollProgress.value = currentReal + offset;
       } else {
         scrollProgress.value = currentReal + (nextReal - currentReal) * offset;
       }
     },
-    [pages, scrollProgress],
+    [pageRealIndexes, scrollProgress],
   );
 
   // onPageScrollStateChanged: スクロール状態が変わったときに呼ばれる
@@ -237,7 +245,22 @@ export const Container: React.FC<TabsContainerProps> = ({
 
       // state === "idle"
       isUserDraggingRef.current = false;
-      isTabPressingRef.current = false; // タブタップ由来のアニメーション完了
+      isTabPressingRef.current = false;
+
+      // 1-B: idle 時に遅延した activeIndex を flush（1回の re-render で済む）
+      const pendingIndex = pendingActiveIndexRef.current;
+      if (pendingIndex !== null) {
+        pendingActiveIndexRef.current = null;
+        setActiveIndex(pendingIndex);
+      }
+
+      // 1-C: idle 時に遅延した onTabChange を flush
+      const pendingChange = pendingTabChangeRef.current;
+      if (pendingChange) {
+        pendingTabChangeRef.current = null;
+        triggerTabChange(pendingChange.newIndex, pendingChange.prevIndex);
+      }
+
       if (isJumpingRef.current) {
         isJumpingRef.current = false;
         return;
@@ -273,7 +296,7 @@ export const Container: React.FC<TabsContainerProps> = ({
         requestAnimationFrame(executeJump);
       }
     },
-    [],
+    [triggerTabChange],
   );
 
   // タブタップハンドラー
