@@ -9,7 +9,8 @@ import {
   useState,
 } from "react";
 import {
-  Dimensions,
+  InteractionManager,
+  Platform,
   type ScrollView as RNScrollView,
   StyleSheet,
   View,
@@ -26,6 +27,9 @@ import {
 import { DefaultTabBar } from "./TabBar";
 import type { TabsContainerProps } from "./types";
 import { getCenterScrollPosition } from "./utils";
+
+/** PagerView scroll states */
+type PageScrollState = "idle" | "dragging" | "settling";
 
 interface VirtualPage {
   /** 実タブのインデックス (0..tabs.length-1) */
@@ -71,6 +75,14 @@ export const Container: React.FC<TabsContainerProps> = ({
   const pagerRef = useRef<PagerView>(null);
   const isJumpingRef = useRef(false);
   const pendingJumpIndexRef = useRef<number | null>(null);
+
+  // --- Issue 1 & 2 fix: Track scroll state to prevent crashes and desync ---
+  // Tracks the current PagerView scroll state to guard against programmatic
+  // page changes while the user is actively swiping or the pager is settling.
+  const pageScrollStateRef = useRef<PageScrollState>("idle");
+  // True when the user is actively dragging. Used to cancel pending jumps
+  // that would conflict with the user's gesture.
+  const isUserDraggingRef = useRef(false);
 
   // Reanimated SharedValue for scroll tracking (collapsible-tab-view compatibility)
   const scrollY = useSharedValue(0);
@@ -196,8 +208,15 @@ export const Container: React.FC<TabsContainerProps> = ({
       }
 
       // クローンページの場合、対応するrealページへのジャンプを予約
+      // Issue 2 fix: If user is already dragging again (rapid swiping),
+      // do NOT schedule a jump — it would conflict with the active gesture.
       if (page.isClone && infiniteScroll && tabs.length > 1) {
-        pendingJumpIndexRef.current = realStartIndex + realIndex;
+        if (isUserDraggingRef.current) {
+          // User started swiping again before we could jump — skip this jump
+          pendingJumpIndexRef.current = null;
+        } else {
+          pendingJumpIndexRef.current = realStartIndex + realIndex;
+        }
       }
     },
     [
@@ -212,11 +231,39 @@ export const Container: React.FC<TabsContainerProps> = ({
 
   // onPageScrollStateChanged: スクロール状態が変わったときに呼ばれる
   // idle になったタイミングでクローン→realジャンプを実行
+  //
+  // Issue 1 fix: Guard against ViewPager2 recycling crash on Android.
+  //   - Only jump when truly idle (not during fling/settle)
+  //   - Use InteractionManager.runAfterInteractions on Android to ensure
+  //     ViewPager2's internal RecyclerView has finished recycling
+  //   - Wrap setPageWithoutAnimation in try-catch to prevent crash propagation
+  //
+  // Issue 2 fix: Cancel pending jumps if user starts dragging again.
+  //   - Track dragging state and clear pendingJumpIndexRef on drag start
   const handlePageScrollStateChanged = useCallback(
-    (e: {
-      nativeEvent: { pageScrollState: "idle" | "dragging" | "settling" };
-    }) => {
-      if (e.nativeEvent.pageScrollState !== "idle") return;
+    (e: { nativeEvent: { pageScrollState: PageScrollState } }) => {
+      const state = e.nativeEvent.pageScrollState;
+      pageScrollStateRef.current = state;
+
+      // Track user dragging state for debounce logic
+      if (state === "dragging") {
+        isUserDraggingRef.current = true;
+        // Issue 2: User started swiping again — cancel any pending jump
+        // to prevent desync between visible page and internal state
+        if (pendingJumpIndexRef.current !== null) {
+          pendingJumpIndexRef.current = null;
+        }
+        return;
+      }
+
+      if (state === "settling") {
+        // Still animating — don't jump yet
+        return;
+      }
+
+      // state === "idle"
+      isUserDraggingRef.current = false;
+
       if (isJumpingRef.current) return;
 
       const jumpIndex = pendingJumpIndexRef.current;
@@ -225,12 +272,46 @@ export const Container: React.FC<TabsContainerProps> = ({
       isJumpingRef.current = true;
       pendingJumpIndexRef.current = null;
 
-      requestAnimationFrame(() => {
-        pagerRef.current?.setPageWithoutAnimation(jumpIndex);
-        requestAnimationFrame(() => {
-          isJumpingRef.current = false;
+      // Issue 1: On Android, use InteractionManager to wait for ViewPager2's
+      // RecyclerView to finish recycling before programmatic page change.
+      // On iOS, requestAnimationFrame is sufficient.
+      const executeJump = () => {
+        try {
+          // Double-check we're still idle and user hasn't started dragging
+          if (
+            pageScrollStateRef.current !== "idle" ||
+            isUserDraggingRef.current
+          ) {
+            isJumpingRef.current = false;
+            return;
+          }
+          pagerRef.current?.setPageWithoutAnimation(jumpIndex);
+        } catch (error) {
+          // Issue 1: Catch Android ViewPager2 IllegalArgumentException
+          // "Scrapped or attached views may not be recycled"
+          // This is a known ViewPager2 bug — swallow it to prevent crash
+          if (__DEV__) {
+            console.warn(
+              "[InfiniteTabView] setPageWithoutAnimation failed (suppressed):",
+              error,
+            );
+          }
+        } finally {
+          requestAnimationFrame(() => {
+            isJumpingRef.current = false;
+          });
+        }
+      };
+
+      if (Platform.OS === "android") {
+        // InteractionManager ensures we run after all pending animations
+        // and RecyclerView recycling have completed
+        InteractionManager.runAfterInteractions(() => {
+          requestAnimationFrame(executeJump);
         });
-      });
+      } else {
+        requestAnimationFrame(executeJump);
+      }
     },
     [],
   );
