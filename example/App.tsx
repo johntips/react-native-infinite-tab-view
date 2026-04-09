@@ -22,6 +22,7 @@ export default function App() {
           onTabChange={(event) => {
             console.log("Active tab:", event.tabName);
           }}
+          lazy={true}
           debug={__DEV__}
           onDebugLog={handleDebugLog}
         >

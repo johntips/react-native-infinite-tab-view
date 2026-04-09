@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`lazy` prop**: nearby でないタブのコンテンツをマウントしない。重いタブコンテンツ（hooks 多数、API fetch 等）のJS thread負荷を大幅削減。一度 nearby になったタブはアンマウントせず維持（React state 保持）
 - **`useIsNearby(tabName)` hook**: アクティブまたは隣接タブかどうかを返す。`enabled: isFocused || isNearby` で隣接タブのデータ事前フェッチが可能に
+
+### Performance
+
+- **スワイプ中の re-render をゼロに**: `setActiveIndex` と `onTabChange` を idle まで遅延。スワイプ中は ref のみ更新し、idle 時に一括 flush
+- **`handlePageScroll` 最適化**: pages 配列の毎フレーム参照をプリコンピュートしたルックアップテーブルに置き換え
 - **`useNearbyIndexes()` hook**: 現在の nearbyIndexes（アクティブ + 隣接タブのインデックス配列）を返す
 - **`offscreenPageLimit` prop**: PagerView のオフスクリーンページ数を外から制御可能に（デフォルト: 1）
 - **Debug logging system**: `debug` prop で有効化、`onDebugLog` コールバックでアプリ側にログ転送。タブの active/nearby/unmounted 状態遷移、何が裏で描画されているかをリアルタイムで把握可能
