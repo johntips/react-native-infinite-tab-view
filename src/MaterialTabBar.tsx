@@ -19,9 +19,10 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
-  runOnJS,
+  scrollTo as reanimatedScrollTo,
   type SharedValue,
   useAnimatedReaction,
+  useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -131,14 +132,20 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
     },
     forwardedRef,
   ) => {
+    // Reanimated useAnimatedRef — UI thread で scrollTo を呼ぶため
+    const animatedScrollRef = useAnimatedRef<ScrollViewType>();
     const localScrollRef = useRef<ScrollViewType | null>(null);
     const hasInitiallyScrolled = useRef(false);
     const lastCenteredIndex = useRef<number | null>(null);
 
-    // Merge forwarded ref and local ref
+    // Merge forwarded ref, local ref, and animated ref
     const setRef = useCallback(
       (node: ScrollViewType | null) => {
         localScrollRef.current = node;
+        // useAnimatedRef の internal に node をセット
+        (
+          animatedScrollRef as unknown as { current: ScrollViewType | null }
+        ).current = node;
         if (typeof forwardedRef === "function") {
           forwardedRef(node);
         } else if (forwardedRef) {
@@ -147,7 +154,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
           ).current = node;
         }
       },
-      [forwardedRef],
+      [forwardedRef, animatedScrollRef],
     );
     const totalVirtualTabs = infiniteScroll
       ? tabs.length * VIRTUAL_MULTIPLIER
@@ -242,26 +249,8 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
     // 中央セットのオフセットを加算して仮想インデックスに変換
     const centerOffset = infiniteScroll ? tabs.length : 0;
 
-    // タブバー中央寄せ: scrollProgress からリアルタイムで ScrollView をスクロール
-    // 毎フレーム呼ぶと重いので、前回の scrollTo 位置と差が大きい時のみ実行
-    const lastScrollToX = useRef(0);
-    const scrollTabBarToCenter = useCallback(
-      (centerX: number) => {
-        if (!scrollEnabled || !localScrollRef.current) return;
-        // 前回との差が小さい場合はスキップ（throttle 代わり）
-        if (Math.abs(centerX - lastScrollToX.current) < 2) return;
-        lastScrollToX.current = centerX;
-        const scrollX = centerX - SCREEN_WIDTH / 2;
-        localScrollRef.current.scrollTo({
-          x: Math.max(0, scrollX),
-          animated: false,
-        });
-      },
-      [scrollEnabled],
-    );
-
     // scrollProgress が変化するたびにインジケーター位置を即座に更新（UI thread）
-    // + タブバー中央寄せをリアルタイムで追従
+    // + タブバー中央寄せを Reanimated scrollTo で UI thread 完結
     useAnimatedReaction(
       () => scrollProgress?.value,
       (progress) => {
@@ -300,10 +289,11 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
         indicatorX.value = interpX;
         indicatorWidth.value = interpW;
 
-        // タブバー中央寄せ: インジケーターの中央を画面中央に合わせる
-        if (centerActive) {
+        // タブバー中央寄せ: UI thread で直接 ScrollView をスクロール（JS thread バイパス）
+        if (centerActive && scrollEnabled) {
           const indicatorCenter = interpX + interpW / 2;
-          runOnJS(scrollTabBarToCenter)(indicatorCenter);
+          const scrollX = Math.max(0, indicatorCenter - SCREEN_WIDTH / 2);
+          reanimatedScrollTo(animatedScrollRef, scrollX, 0, false);
         }
       },
       [
@@ -312,7 +302,8 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
         tabLayoutWidths,
         centerOffset,
         centerActive,
-        scrollTabBarToCenter,
+        scrollEnabled,
+        animatedScrollRef,
       ],
     );
 

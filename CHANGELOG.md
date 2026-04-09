@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-04-10
+
+### Performance
+
+- **タブバー scrollTo を UI thread 完結に**: `runOnJS(scrollTo)` → Reanimated `scrollTo(animatedRef)` に置き換え。JS thread を完全バイパスし、タブバーの中央寄せがネイティブスレッドで直接実行。スワイプ中の JS thread 混雑に一切影響されない
+- `useAnimatedRef` でタブバー ScrollView を UI thread から直接操作
+- throttle ロジック不要に（UI thread で毎フレーム実行しても問題ない）
+
 ## [3.0.0] - 2026-04-10
 
 ### Breaking Changes
