@@ -5,12 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.6.2] - 2026-04-10
+## [3.0.0] - 2026-04-10
+
+### Breaking Changes
+
+- **無限スクロール方式を仮想インデックスに刷新**: 3セットクローン方式を廃止し、`tabs.length × 10` の仮想ページ空間を使用。中央から開始し、端に近づいた場合のみ巻き戻し。クローン境界での高速スワイプスタック問題を完全解消
+- `VirtualPage.isClone` フィールドは常に `false`（クローンの概念が不要に）
 
 ### Performance
 
-- **タブバー中央寄せを scrollProgress 連動に**: useEffect 経由（2-3フレーム遅延）→ useAnimatedReaction + runOnJS（1フレーム遅延）に改善。スワイプ中にタブバーが滑らかに追従
-- scrollTo のスロットル: 差分が2px未満の場合はスキップ（不要な scrollTo を排除）
+- **ジャンプ頻度ゼロ**: 5周スワイプしないと巻き戻しが発生しない（実質無限）
+- **コード簡素化**: クローン生成 + ジャンプタイミング制御の約60行を削除
+- **タブバー中央寄せを scrollProgress 連動に**: useEffect 経由（2-3フレーム遅延）→ useAnimatedReaction + runOnJS（1フレーム遅延）。スワイプ中にタブバーが滑らかに追従
+- scrollTo のスロットル: 差分が2px未満の場合はスキップ
 
 ## [2.6.1] - 2026-04-10
 

@@ -158,15 +158,15 @@ describe("Container", () => {
           </Container>,
         );
 
-        // 3タブ × VIRTUAL_MULTIPLIER(3) = 9ページ生成される
-        // 各コンテンツが3回ずつ表示される
+        // 3タブ × BUFFER_MULTIPLIER(50) = 150 仮想ページ
+        // 各コンテンツが 50 回ずつ表示される
         const content1Elements = getAllByText("Content 1");
         const content2Elements = getAllByText("Content 2");
         const content3Elements = getAllByText("Content 3");
 
-        expect(content1Elements).toHaveLength(3); // 仮想ページで3回表示
-        expect(content2Elements).toHaveLength(3);
-        expect(content3Elements).toHaveLength(3);
+        expect(content1Elements).toHaveLength(10);
+        expect(content2Elements).toHaveLength(10);
+        expect(content3Elements).toHaveLength(10);
       });
 
       it("infiniteScroll=falseの場合、tabs.length分のページのみ生成", () => {
@@ -194,7 +194,7 @@ describe("Container", () => {
         expect(content3Elements).toHaveLength(1);
       });
 
-      it("20タブで60ページ（3倍）生成されることを確認", () => {
+      it("20タブで大量の仮想ページが生成されることを確認", () => {
         const tabs = Array.from({ length: 20 }, (_, i) => ({
           name: `tab${i}`,
           label: `Tab ${i}`,
@@ -211,10 +211,10 @@ describe("Container", () => {
           </Container>,
         );
 
-        // 各コンテンツが3回ずつ表示される（20タブ × 3 = 60ページ）
+        // 各コンテンツが BUFFER_MULTIPLIER 回表示される
         tabs.forEach((tab) => {
           const contentElements = getAllByText(tab.content);
-          expect(contentElements).toHaveLength(3);
+          expect(contentElements).toHaveLength(10);
         });
       });
     });
@@ -565,6 +565,56 @@ describe("Container", () => {
 
       // 初期化時には呼ばれない
       expect(onTabChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("仮想インデックス無限スクロール", () => {
+    it("infiniteScroll=true で大量の仮想ページが生成される", () => {
+      const { getAllByText } = render(
+        <Container infiniteScroll={true}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+          <Tab name="tab3" label="Tab 3">
+            <Text>Content 3</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // 仮想ページ数 = tabs.length * BUFFER_MULTIPLIER
+      // 各コンテンツは複数回表示される
+      const content1 = getAllByText("Content 1");
+      expect(content1.length).toBeGreaterThan(3);
+    });
+
+    it("クローン（isClone）の概念が不要", () => {
+      // renderTabBar で tabs を確認 — クローンフラグがない
+      let receivedTabs: Array<{ name: string; label: string }> = [];
+
+      render(
+        <Container
+          infiniteScroll={true}
+          renderTabBar={(props) => {
+            receivedTabs = props.tabs;
+            return <View />;
+          }}
+        >
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // tabs は実タブのみ（クローンなし）
+      expect(receivedTabs).toHaveLength(2);
+      expect(receivedTabs[0]?.name).toBe("tab1");
+      expect(receivedTabs[1]?.name).toBe("tab2");
     });
   });
 

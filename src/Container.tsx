@@ -104,22 +104,27 @@ export const Container: React.FC<TabsContainerProps> = ({
   const scrollProgress = useSharedValue(0);
 
   // --- PagerView 用仮想ページ配列 ---
-  // 無限スクロール時: [head clones] + [real] + [tail clones]
-  // head clones = tabs のコピー (インデックス 0..N-1)
-  // real        = tabs のコピー (インデックス N..2N-1)
-  // tail clones = tabs のコピー (インデックス 2N..3N-1)
+  // 仮想インデックス方式: tabs.length × BUFFER_MULTIPLIER の仮想ページを生成
+  // 各ページの realIndex = virtualIndex % tabs.length
+  // 初期ページは中央付近に配置し、ユーザーが端に到達する前に巻き戻す
+  const BUFFER_MULTIPLIER = 10;
   const pages: VirtualPage[] = useMemo(() => {
     if (!infiniteScroll || tabs.length <= 1) {
       return tabs.map((_, i) => ({ realIndex: i, isClone: false }));
     }
-    const head = tabs.map((_, i) => ({ realIndex: i, isClone: true }));
-    const real = tabs.map((_, i) => ({ realIndex: i, isClone: false }));
-    const tail = tabs.map((_, i) => ({ realIndex: i, isClone: true }));
-    return [...head, ...real, ...tail];
+    const totalPages = tabs.length * BUFFER_MULTIPLIER;
+    return Array.from({ length: totalPages }, (_, i) => ({
+      realIndex: i % tabs.length,
+      isClone: false,
+    }));
   }, [tabs, infiniteScroll]);
 
-  // realページの開始インデックス（PagerView 内での位置）
-  const realStartIndex = infiniteScroll && tabs.length > 1 ? tabs.length : 0;
+  // 初期ページ: 中央付近で tabs.length の倍数に揃える
+  const centerPage = useMemo(() => {
+    if (!infiniteScroll || tabs.length <= 1) return 0;
+    const center = Math.floor(pages.length / 2);
+    return center - (center % tabs.length);
+  }, [infiniteScroll, tabs.length, pages.length]);
 
   // 1-D: pages ルックアップテーブル（onPageScroll で毎フレーム参照するため事前生成）
   // pagerIndex → realIndex のマッピング
@@ -163,36 +168,36 @@ export const Container: React.FC<TabsContainerProps> = ({
   } | null>(null);
 
   // onPageSelected: ページが確定したときに呼ばれる
-  // setActiveIndex は即実行（タブ色・インジケーターの正確性のため）
-  // onTabChange のみ idle まで遅延
   const handlePageSelected = useCallback(
     (e: PagerViewOnPageSelectedEvent) => {
       if (isJumpingRef.current) return;
 
       const position = e.nativeEvent.position;
-      const page = pages[position];
-      if (!page) return;
+      const realIndex = pageRealIndexes[position];
+      if (realIndex === undefined) return;
 
-      const realIndex = page.realIndex;
       const prevIndex = prevActiveIndexRef.current;
       prevActiveIndexRef.current = realIndex;
 
-      // activeIndex は即更新（タブのアクティブ色 + インジケーター位置の正確性のため）
       setActiveIndex(realIndex);
 
-      // onTabChange は idle まで遅延（アプリ側の重い処理をスワイプ中に走らせない）
       if (realIndex !== prevIndex) {
         pendingTabChangeRef.current = { newIndex: realIndex, prevIndex };
       }
 
-      // クローンページの場合、対応するrealページへのジャンプを予約
-      if (page.isClone && infiniteScroll && tabs.length > 1) {
-        if (!isUserDraggingRef.current) {
-          pendingJumpIndexRef.current = realStartIndex + realIndex;
+      // 巻き戻し保険: 端に近づいたら中央に戻す
+      if (infiniteScroll && tabs.length > 1) {
+        const edgeThreshold = tabs.length * 5;
+        if (
+          position < edgeThreshold ||
+          position > pages.length - edgeThreshold
+        ) {
+          // 同じ realIndex の中央付近のページに巻き戻し予約
+          pendingJumpIndexRef.current = centerPage + realIndex;
         }
       }
     },
-    [pages, realStartIndex, infiniteScroll, tabs.length],
+    [pageRealIndexes, infiniteScroll, tabs.length, pages.length, centerPage],
   );
 
   // タブタップ中フラグ（onPageScroll の scrollProgress 更新をスキップ）
@@ -310,8 +315,7 @@ export const Container: React.FC<TabsContainerProps> = ({
 
       // PagerView のページ切替
       if (infiniteScroll && tabs.length > 1) {
-        const targetPagerIndex = realStartIndex + normalized;
-        pagerRef.current?.setPage(targetPagerIndex);
+        pagerRef.current?.setPage(centerPage + normalized);
       } else {
         pagerRef.current?.setPage(normalized);
       }
@@ -322,7 +326,7 @@ export const Container: React.FC<TabsContainerProps> = ({
       onFocusedTabPress,
       infiniteScroll,
       tabs.length,
-      realStartIndex,
+      centerPage,
     ],
   );
 
@@ -449,10 +453,7 @@ export const Container: React.FC<TabsContainerProps> = ({
 
       if (isValidElement<{ children: React.ReactNode }>(child)) {
         return (
-          <View
-            key={`pager-${page.isClone ? "clone" : "real"}-${pagerIndex}`}
-            style={styles.page}
-          >
+          <View key={`pager-${pagerIndex}`} style={styles.page}>
             {child.props.children}
           </View>
         );
@@ -463,7 +464,7 @@ export const Container: React.FC<TabsContainerProps> = ({
   }, [children, pages, lazy, nearbyIndexes]);
 
   // 初期ページ（PagerView の initialPage）
-  const initialPage = infiniteScroll && tabs.length > 1 ? realStartIndex : 0;
+  const initialPage = infiniteScroll && tabs.length > 1 ? centerPage : 0;
 
   return (
     <TabsProvider value={contextValue}>
