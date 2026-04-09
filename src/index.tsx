@@ -14,7 +14,13 @@ export const Tabs = {
 
 export { useTabsContext } from "./Context";
 // Hooks
-export { useActiveTabIndex, useCurrentTabScrollY, useTabs } from "./hooks";
+export {
+  useActiveTabIndex,
+  useCurrentTabScrollY,
+  useIsNearby,
+  useNearbyIndexes,
+  useTabs,
+} from "./hooks";
 
 // Components
 export { MaterialTabBar } from "./MaterialTabBar";

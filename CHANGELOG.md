@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-04-10
+
+### Added
+
+- **`useIsNearby(tabName)` hook**: アクティブまたは隣接タブかどうかを返す。`enabled: isFocused || isNearby` で隣接タブのデータ事前フェッチが可能に
+- **`useNearbyIndexes()` hook**: 現在の nearbyIndexes（アクティブ + 隣接タブのインデックス配列）を返す
+- **`offscreenPageLimit` prop**: PagerView のオフスクリーンページ数を外から制御可能に（デフォルト: 1）
+- **Debug logging system**: `debug` prop で有効化、`onDebugLog` コールバックでアプリ側にログ転送。タブの active/nearby/unmounted 状態遷移、何が裏で描画されているかをリアルタイムで把握可能
+- **`DebugLogEvent` 型**: debug ログの型定義をエクスポート
+- DefaultTabBar に `activeColor` / `inactiveColor` / `indicatorStyle` props を追加
+
+### Changed
+
+- Context に `nearbyIndexes` を追加（`useTabsContext()` で取得可能）
+
+## [2.5.0] - 2026-04-10
+
+### Added
+
+- **`scrollProgress` SharedValue**: PagerView の `onPageScroll` でスワイプ進捗をリアルタイム計測、TabBar に渡してインジケーターを60fps補間
+- **リアルタイムインジケーター補間**: MaterialTabBar / DefaultTabBar が `useAnimatedReaction` で `scrollProgress` を購読し、スワイプ中にインジケーターが追従
+
+### Changed
+
+- `handleTabLayout` を `useState` + Map コピーから `useRef` + rAF バッチに変更（初回マウント時の re-render を60回→0回に削減）
+- `tabLayouts` の二重管理（state → useEffect → SharedValue）を廃止、ref → rAF → SharedValue 直接書き込みに統一
+
+### Fixed
+
+- `isTabPressingRef` のリセット漏れ修正（タブタップ後のスワイプでインジケーター追従が死ぬバグ）
+- 初回描画時にインジケーターが表示されない問題を修正
+- `scrollEnabled={false}` 時のタブテキスト省略表示を修正
+
 ## [2.4.0] - 2026-04-09
 
 ### Fixed

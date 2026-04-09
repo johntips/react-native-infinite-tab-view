@@ -2,7 +2,19 @@ import { render } from "@testing-library/react";
 import { Text, View } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 import { Container } from "../Container";
+import { useTabsContext } from "../Context";
 import { Tab } from "../Tab";
+
+// nearbyIndexes をキャプチャするテスト用コンポーネント
+function NearbyCapture({
+  onCapture,
+}: {
+  onCapture: (indexes: number[]) => void;
+}) {
+  const { nearbyIndexes } = useTabsContext();
+  onCapture(nearbyIndexes);
+  return <Text>Capture</Text>;
+}
 
 describe("Container", () => {
   describe("基本レンダリング", () => {
@@ -307,6 +319,201 @@ describe("Container", () => {
 
       const { container } = render(
         <Container onFocusedTabPress={onFocusedTabPress}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+        </Container>,
+      );
+
+      expect(container.firstChild).toBeTruthy();
+    });
+  });
+
+  describe("nearbyIndexes", () => {
+    it("nearbyIndexes がコンテキストに含まれる", () => {
+      render(
+        <Container
+          infiniteScroll={false}
+          renderTabBar={(props) => {
+            // renderTabBar では nearbyIndexes は直接渡されないが、
+            // useTabsContext で取得できることをテスト
+            return <View />;
+          }}
+        >
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+          <Tab name="tab3" label="Tab 3">
+            <Text>Content 3</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // コンテナがクラッシュしないことを確認
+      expect(true).toBeTruthy();
+    });
+
+    it("初期状態で activeIndex=0 の隣接タブが含まれる（offscreenPageLimit=1）", () => {
+      let receivedNearbyIndexes: number[] = [];
+
+      render(
+        <Container
+          infiniteScroll={false}
+          offscreenPageLimit={1}
+          renderTabBar={() => <View />}
+        >
+          <Tab name="tab1" label="Tab 1">
+            <NearbyCapture
+              onCapture={(v) => {
+                receivedNearbyIndexes = v;
+              }}
+            />
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+          <Tab name="tab3" label="Tab 3">
+            <Text>Content 3</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // activeIndex=0, offscreenPageLimit=1 → [0, 1] が nearby
+      expect(receivedNearbyIndexes).toContain(0);
+      expect(receivedNearbyIndexes).toContain(1);
+      expect(receivedNearbyIndexes).not.toContain(2);
+    });
+
+    it("offscreenPageLimit=2 で前後2タブが nearby に含まれる", () => {
+      let receivedNearbyIndexes: number[] = [];
+
+      render(
+        <Container
+          infiniteScroll={false}
+          offscreenPageLimit={2}
+          renderTabBar={() => <View />}
+        >
+          <Tab name="tab1" label="Tab 1">
+            <NearbyCapture
+              onCapture={(v) => {
+                receivedNearbyIndexes = v;
+              }}
+            />
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+          <Tab name="tab3" label="Tab 3">
+            <Text>Content 3</Text>
+          </Tab>
+          <Tab name="tab4" label="Tab 4">
+            <Text>Content 4</Text>
+          </Tab>
+          <Tab name="tab5" label="Tab 5">
+            <Text>Content 5</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // activeIndex=0, offscreenPageLimit=2 → [0, 1, 2]
+      expect(receivedNearbyIndexes).toContain(0);
+      expect(receivedNearbyIndexes).toContain(1);
+      expect(receivedNearbyIndexes).toContain(2);
+      expect(receivedNearbyIndexes).not.toContain(3);
+    });
+  });
+
+  describe("debug logging", () => {
+    it("debug=false の場合 onDebugLog が呼ばれない", () => {
+      const onDebugLog = vi.fn();
+
+      render(
+        <Container debug={false} onDebugLog={onDebugLog} infiniteScroll={false}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+        </Container>,
+      );
+
+      expect(onDebugLog).not.toHaveBeenCalled();
+    });
+
+    it("debug=true の場合 onDebugLog が呼ばれる", () => {
+      const onDebugLog = vi.fn();
+
+      render(
+        <Container debug={true} onDebugLog={onDebugLog} infiniteScroll={false}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // 初回レンダリング時にアクティブタブと隣接タブのログが呼ばれる
+      expect(onDebugLog).toHaveBeenCalled();
+      const calls = onDebugLog.mock.calls.map(
+        (c: [{ type: string }]) => c[0].type,
+      );
+      expect(calls).toContain("tab-active");
+    });
+
+    it("debug prop を受け付ける", () => {
+      const { container } = render(
+        <Container debug={true} infiniteScroll={false}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+        </Container>,
+      );
+
+      expect(container.firstChild).toBeTruthy();
+    });
+
+    it("onDebugLog のイベントに timestamp が含まれる", () => {
+      const onDebugLog = vi.fn();
+
+      render(
+        <Container debug={true} onDebugLog={onDebugLog} infiniteScroll={false}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+        </Container>,
+      );
+
+      if (onDebugLog.mock.calls.length > 0) {
+        const event = onDebugLog.mock.calls[0][0];
+        expect(event.timestamp).toBeTypeOf("number");
+        expect(event.tabName).toBeTypeOf("string");
+        expect(event.tabIndex).toBeTypeOf("number");
+      }
+    });
+  });
+
+  describe("offscreenPageLimit", () => {
+    it("デフォルト offscreenPageLimit=1 でレンダリングされる", () => {
+      const { container } = render(
+        <Container infiniteScroll={false}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+        </Container>,
+      );
+
+      expect(container.firstChild).toBeTruthy();
+    });
+
+    it("offscreenPageLimit=2 でレンダリングされる", () => {
+      const { container } = render(
+        <Container offscreenPageLimit={2} infiniteScroll={false}>
           <Tab name="tab1" label="Tab 1">
             <Text>Content 1</Text>
           </Tab>

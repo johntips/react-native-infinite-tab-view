@@ -16,6 +16,19 @@ export interface TabChangeEvent {
   prevIndex: number;
 }
 
+export interface DebugLogEvent {
+  type:
+    | "tab-active"
+    | "tab-nearby"
+    | "tab-unmounted"
+    | "prefetch-start"
+    | "prefetch-cached";
+  tabName: string;
+  tabIndex: number;
+  timestamp: number;
+  detail?: string;
+}
+
 export interface TabsContainerProps {
   children: ReactNode;
   renderHeader?: () => ReactElement;
@@ -35,6 +48,15 @@ export interface TabsContainerProps {
   pagerProps?: Partial<ComponentProps<typeof PagerView>>;
   /** 初期表示タブ名 */
   initialTabName?: string;
+  /**
+   * PagerView の offscreenPageLimit（デフォルト: 1）
+   * 1 = 3ページ（prev/current/next）、2 = 5ページ、etc.
+   */
+  offscreenPageLimit?: number;
+  /** デバッグモード: コンソール + onDebugLog にログ出力 */
+  debug?: boolean;
+  /** デバッグログコールバック: アプリ側でログを受け取る */
+  onDebugLog?: (event: DebugLogEvent) => void;
 }
 
 export interface TabProps {
@@ -61,6 +83,8 @@ export interface TabBarProps {
 
 export interface TabsContextValue {
   activeIndex: number;
+  /** アクティブタブ + 隣接タブのインデックス配列（offscreenPageLimit に基づく） */
+  nearbyIndexes: number[];
   tabs: Array<{ name: string; label: string }>;
   scrollY: any; // Reanimated SharedValue<number>
   headerHeight: number;

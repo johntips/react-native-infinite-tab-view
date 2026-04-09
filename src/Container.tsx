@@ -3,6 +3,7 @@ import {
   Children,
   isValidElement,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -23,7 +24,7 @@ import { useSharedValue } from "react-native-reanimated";
 import { TabsProvider } from "./Context";
 import { SCREEN_WIDTH, TAB_BAR_HEIGHT } from "./constants";
 import { DefaultTabBar } from "./TabBar";
-import type { TabsContainerProps } from "./types";
+import type { DebugLogEvent, TabsContainerProps } from "./types";
 
 interface VirtualPage {
   /** 実タブのインデックス (0..tabs.length-1) */
@@ -45,7 +46,24 @@ export const Container: React.FC<TabsContainerProps> = ({
   headerContainerStyle,
   tabBarContainerStyle,
   allowHeaderOverscroll: _allowHeaderOverscroll = false,
+  offscreenPageLimit = 1,
+  debug = false,
+  onDebugLog,
 }) => {
+  // デバッグログ: production ではデフォルト off、オプトインで有効化
+  const debugLog = useCallback(
+    (event: Omit<DebugLogEvent, "timestamp">) => {
+      if (!debug) return;
+      const fullEvent: DebugLogEvent = { ...event, timestamp: Date.now() };
+      if (__DEV__) {
+        console.log(
+          `[rn-infinite-tab-view] ${event.type} | ${event.tabName} (idx:${event.tabIndex})${event.detail ? ` | ${event.detail}` : ""}`,
+        );
+      }
+      onDebugLog?.(fullEvent);
+    },
+    [debug, onDebugLog],
+  );
   // タブデータを子要素から抽出
   const tabs = useMemo(() => {
     const tabList: Array<{ name: string; label: string }> = [];
@@ -306,10 +324,72 @@ export const Container: React.FC<TabsContainerProps> = ({
   // タブ名の配列
   const tabNames = useMemo(() => tabs.map((t) => t.name), [tabs]);
 
+  // nearbyIndexes: activeIndex ± offscreenPageLimit の範囲内のインデックス
+  const nearbyIndexes = useMemo(() => {
+    const indexes: number[] = [];
+    for (
+      let i = activeIndex - offscreenPageLimit;
+      i <= activeIndex + offscreenPageLimit;
+      i++
+    ) {
+      // infiniteScroll の場合はラップアラウンド
+      const normalized = infiniteScroll
+        ? ((i % tabs.length) + tabs.length) % tabs.length
+        : i;
+      if (normalized >= 0 && normalized < tabs.length) {
+        if (!indexes.includes(normalized)) {
+          indexes.push(normalized);
+        }
+      }
+    }
+    return indexes;
+  }, [activeIndex, offscreenPageLimit, tabs.length, infiniteScroll]);
+
+  // debug log: activeIndex / nearbyIndexes 変更時にログ出力
+  const prevNearbyRef = useRef<number[]>([]);
+  useEffect(() => {
+    if (!debug) return;
+    const prev = prevNearbyRef.current;
+
+    // アクティブタブのログ
+    debugLog({
+      type: "tab-active",
+      tabName: tabs[activeIndex]?.name ?? "",
+      tabIndex: activeIndex,
+      detail: `nearby: [${nearbyIndexes.map((i) => tabs[i]?.name).join(", ")}]`,
+    });
+
+    // 新しく nearby になったタブ
+    for (const idx of nearbyIndexes) {
+      if (idx !== activeIndex && !prev.includes(idx)) {
+        debugLog({
+          type: "tab-nearby",
+          tabName: tabs[idx]?.name ?? "",
+          tabIndex: idx,
+          detail: "prefetch eligible",
+        });
+      }
+    }
+
+    // nearby から外れたタブ
+    for (const idx of prev) {
+      if (!nearbyIndexes.includes(idx)) {
+        debugLog({
+          type: "tab-unmounted",
+          tabName: tabs[idx]?.name ?? "",
+          tabIndex: idx,
+        });
+      }
+    }
+
+    prevNearbyRef.current = nearbyIndexes;
+  }, [activeIndex, nearbyIndexes, tabs, debug, debugLog]);
+
   // Context値
   const contextValue = useMemo(
     () => ({
       activeIndex,
+      nearbyIndexes,
       tabs,
       scrollY,
       headerHeight,
@@ -320,6 +400,7 @@ export const Container: React.FC<TabsContainerProps> = ({
     }),
     [
       activeIndex,
+      nearbyIndexes,
       tabs,
       scrollY,
       headerHeight,
@@ -399,7 +480,7 @@ export const Container: React.FC<TabsContainerProps> = ({
             ref={pagerRef}
             style={styles.pagerView}
             initialPage={initialPage}
-            offscreenPageLimit={1}
+            offscreenPageLimit={offscreenPageLimit}
             onPageScroll={handlePageScroll}
             onPageSelected={handlePageSelected}
             onPageScrollStateChanged={handlePageScrollStateChanged}

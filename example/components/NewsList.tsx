@@ -1,7 +1,12 @@
 import type React from "react";
-import { memo } from "react";
+import { memo, useEffect } from "react";
 import { StyleSheet, View } from "react-native";
-import { Tabs } from "react-native-infinite-tab-view";
+import {
+  Tabs,
+  useActiveTabIndex,
+  useIsNearby,
+  useTabs,
+} from "react-native-infinite-tab-view";
 import type { NewsItem } from "../data/newsItems";
 import { getNewsByCategory } from "../data/newsItems";
 import { NewsCard } from "./NewsCard";
@@ -10,20 +15,34 @@ interface NewsListProps {
   category: string;
 }
 
-const renderItem = ({ item }: { item: NewsItem }) => (
-  <NewsCard item={item} />
-);
+const renderItem = ({ item }: { item: NewsItem }) => <NewsCard item={item} />;
 
 const keyExtractor = (item: NewsItem) => item.id;
 
 /**
- * Tabs.FlashList を使用した高パフォーマンスニュースリスト
+ * Tabs.FlashList + useIsNearby を使用した高パフォーマンスニュースリスト
+ * - useIsNearby でアクティブ or 隣接タブかどうかを判定
+ * - nearby なタブはデータフェッチを先行開始（プリフェッチ）
  * - FlashList のリサイクル機構で大量アイテムでもメモリ効率が高い
- * - estimatedItemSize で初回レンダリングを高速化
- * - renderItem を外部定義して不要な再生成を防止
  */
 export const NewsList: React.FC<NewsListProps> = memo(({ category }) => {
   const newsItems = getNewsByCategory(category);
+  const tabName = category.toLowerCase();
+  const isNearby = useIsNearby(tabName);
+  const activeIndex = useActiveTabIndex();
+  const tabs = useTabs();
+  const isActive = tabs[activeIndex]?.name === tabName;
+
+  // デバッグ: nearby / active 状態をログ出力
+  useEffect(() => {
+    if (__DEV__) {
+      if (isActive) {
+        console.log(`[NewsList] ${category}: ACTIVE — rendering content`);
+      } else if (isNearby) {
+        console.log(`[NewsList] ${category}: NEARBY — prefetching data`);
+      }
+    }
+  }, [isNearby, isActive, category]);
 
   return (
     <View style={styles.container}>

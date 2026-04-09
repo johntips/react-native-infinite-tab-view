@@ -339,6 +339,9 @@ function CustomTabBar({ tabs, activeIndex, onTabPress }: TabBarProps) {
 | `containerStyle` | `StyleProp<ViewStyle>` | - | Container style |
 | `headerContainerStyle` | `StyleProp<ViewStyle>` | - | Header wrapper style |
 | `tabBarContainerStyle` | `StyleProp<ViewStyle>` | - | Tab bar wrapper style |
+| `offscreenPageLimit` | `number` | `1` | PagerView offscreen pages (1=3 pages, 2=5 pages) |
+| `debug` | `boolean` | `false` | Enable debug logging (nearby/active/unmounted transitions) |
+| `onDebugLog` | `(event: DebugLogEvent) => void` | - | Debug log callback for app-side logging |
 
 ### Tabs.Tab
 
@@ -377,6 +380,8 @@ interface TabChangeEvent {
 | `useCurrentTabScrollY()` | `SharedValue<number>` | Current tab's scroll Y position |
 | `useActiveTabIndex()` | `number` | Currently active tab index |
 | `useTabs()` | `Tab[]` | Array of tab info |
+| `useIsNearby(tabName)` | `boolean` | Whether the tab is active or adjacent (for prefetching) |
+| `useNearbyIndexes()` | `number[]` | Array of active + adjacent tab indexes |
 | `useTabsContext()` | `TabsContextValue` | Full context value |
 
 ## Migration from react-native-collapsible-tab-view
