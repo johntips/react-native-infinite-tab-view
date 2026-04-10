@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-04-10
+
+### Breaking Changes
+
+- **scrollProgress パイプラインを完全廃止**: `onPageScroll` ハンドラ、`scrollProgress` SharedValue、`useAnimatedReaction` によるリアルタイム追従を全て削除。スワイプとタブの非同期追従設計に移行
+- `TabBarProps` から `scrollProgress` を削除
+
+### Architecture: 非同期追従設計
+
+```
+リストスワイプ → PagerView がネイティブ60fps処理（JS thread 不使用）
+             → スワイプ完了（onPageSelected）
+               → setActiveIndex → withTiming でインジケーター追従
+
+タブタップ → withTiming でインジケーター即移動
+          → setPage で PagerView ページ切替
+```
+
+**お互いがお互いを待たない。先に動いた方が60fpsで完了し、後追いでもう片方が追従する。**
+
+### Performance
+
+- **JS thread のスワイプ中処理がゼロに**: `onPageScroll` callback が完全になくなったため、スワイプ中に JS thread が一切使われない
+- コード約80行削減（scrollProgress 関連パイプライン全体）
+
+## [3.1.0] - 2026-04-10
+
+### Performance
+
+- **onPageScroll を runOnUI worklet 化**: JS thread で受け取った scroll イベントを即座に `runOnUI` で UI thread に移行し、SharedValue 書き込みを UI thread で実行。JS thread の重い処理（React re-render 等）に一切影響されないインジケーター追従を実現
+- `pageRealIndexes` を SharedValue 化: UI thread worklet 内からルックアップテーブルに直接アクセス
+
+### Thread Architecture (v3.1.0)
+
+```
+Content swiping    → Native thread (PagerView)
+scrollProgress     → JS callback → runOnUI → UI thread (SharedValue write)
+Indicator sliding  → UI thread (Reanimated useAnimatedReaction)
+Tab bar centering  → UI thread (Reanimated scrollTo)
+Tab color update   → JS thread (React setState, minimized by lazy + memo)
+```
+
 ## [3.0.1] - 2026-04-10
 
 ### Performance

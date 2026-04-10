@@ -19,10 +19,6 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
-  scrollTo as reanimatedScrollTo,
-  type SharedValue,
-  useAnimatedReaction,
-  useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -47,8 +43,6 @@ export interface MaterialTabBarProps extends TabBarProps {
   style?: StyleProp<ViewStyle>;
   /** タブアイテムのスタイル */
   tabStyle?: StyleProp<ViewStyle>;
-  /** PagerView スクロール進捗（Container から自動で渡される） */
-  scrollProgress?: SharedValue<number>;
 }
 
 // 仮想ページ倍率
@@ -128,24 +122,16 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       labelStyle,
       style,
       tabStyle,
-      scrollProgress,
     },
     forwardedRef,
   ) => {
-    // Reanimated useAnimatedRef — UI thread で scrollTo を呼ぶため
-    const animatedScrollRef = useAnimatedRef<ScrollViewType>();
     const localScrollRef = useRef<ScrollViewType | null>(null);
     const hasInitiallyScrolled = useRef(false);
     const lastCenteredIndex = useRef<number | null>(null);
 
-    // Merge forwarded ref, local ref, and animated ref
     const setRef = useCallback(
       (node: ScrollViewType | null) => {
         localScrollRef.current = node;
-        // useAnimatedRef の internal に node をセット
-        (
-          animatedScrollRef as unknown as { current: ScrollViewType | null }
-        ).current = node;
         if (typeof forwardedRef === "function") {
           forwardedRef(node);
         } else if (forwardedRef) {
@@ -154,7 +140,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
           ).current = node;
         }
       },
-      [forwardedRef, animatedScrollRef],
+      [forwardedRef],
     );
     const totalVirtualTabs = infiniteScroll
       ? tabs.length * VIRTUAL_MULTIPLIER
@@ -244,69 +230,6 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       [flushLayouts],
     );
 
-    // scrollProgress ベースのリアルタイムインジケーター
-    // scrollProgress は realIndex ベース（0.0〜tabs.length-1）なので
-    // 中央セットのオフセットを加算して仮想インデックスに変換
-    const centerOffset = infiniteScroll ? tabs.length : 0;
-
-    // scrollProgress が変化するたびにインジケーター位置を即座に更新（UI thread）
-    // + タブバー中央寄せを Reanimated scrollTo で UI thread 完結
-    useAnimatedReaction(
-      () => scrollProgress?.value,
-      (progress) => {
-        if (progress === undefined || progress === null) return;
-        const xs = tabLayoutXs.value;
-        const widths = tabLayoutWidths.value;
-        if (xs.length === 0) return;
-
-        // realIndex → virtualIndex（中央セット）
-        const virtualProgress = progress + centerOffset;
-
-        const currentIdx = Math.floor(virtualProgress);
-        const nextIdx = currentIdx + 1;
-        const fraction = virtualProgress - currentIdx;
-
-        if (currentIdx < 0 || currentIdx >= xs.length) return;
-
-        const currentX = xs[currentIdx] ?? 0;
-        const currentW = widths[currentIdx] ?? 0;
-        const nextX = nextIdx < xs.length ? (xs[nextIdx] ?? 0) : currentX;
-        const nextW = nextIdx < xs.length ? (widths[nextIdx] ?? 0) : currentW;
-
-        // インジケーター位置の補間
-        const currentInset = currentW * 0.1;
-        const nextInset = nextW * 0.1;
-
-        const interpX =
-          currentX +
-          currentInset +
-          (nextX + nextInset - (currentX + currentInset)) * fraction;
-        const interpW =
-          currentW -
-          currentInset * 2 +
-          (nextW - nextInset * 2 - (currentW - currentInset * 2)) * fraction;
-
-        indicatorX.value = interpX;
-        indicatorWidth.value = interpW;
-
-        // タブバー中央寄せ: UI thread で直接 ScrollView をスクロール（JS thread バイパス）
-        if (centerActive && scrollEnabled) {
-          const indicatorCenter = interpX + interpW / 2;
-          const scrollX = Math.max(0, indicatorCenter - SCREEN_WIDTH / 2);
-          reanimatedScrollTo(animatedScrollRef, scrollX, 0, false);
-        }
-      },
-      [
-        scrollProgress,
-        tabLayoutXs,
-        tabLayoutWidths,
-        centerOffset,
-        centerActive,
-        scrollEnabled,
-        animatedScrollRef,
-      ],
-    );
-
     // インジケーター初期化 + センタリングを rAF flush 後に実行
     const hasInitialIndicator = useRef(false);
 
@@ -349,10 +272,8 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
     // flush 後のコールバックを登録
     layoutFlushCallbackRef.current = updateIndicatorAndCenter;
 
-    // activeIndex 変更時（タブタップ）: withTiming でインジケーター移動 + センタリング
-    // scrollProgress の有無に関係なく常に withTiming で移動する。
-    // タブタップ時は isTabPressingRef=true で handlePageScroll がスキップされるため、
-    // scrollProgress は更新されず useAnimatedReaction も動かない。
+    // activeIndex 変更時: withTiming でインジケーター移動 + センタリング
+    // スワイプ完了後 or タブタップ後に発火。非同期追従設計。
     useEffect(() => {
       if (!hasInitialIndicator.current) return;
 

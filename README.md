@@ -82,26 +82,28 @@ Swipe left past clone[0]:             Swipe right past clone[4]:
   No setTimeout ✓  No flicker ✓  Native-speed ✓
 ```
 
-### Thread Architecture
+### Thread Architecture — Async Follow Design
 
 ```
 ┌─────────────────────────┐    ┌─────────────────────────┐
 │      UI Thread          │    │      JS Thread          │
-│  (native, 60fps)        │    │  (React, callbacks)     │
+│  (native, 60fps)        │    │  (React, after idle)    │
 │                         │    │                         │
-│  PagerView gestures ◄───┼────┼── onPageSelected        │
-│  Page transitions       │    │   onPageScrollState     │
-│  Reanimated indicator ◄─┼────┼── withTiming(200ms)     │
-│  ScrollView tab swipe   │    │   activeIndex setState  │
-│                         │    │   scrollTabToCenter     │
+│  PagerView gestures     │    │  onPageSelected         │
+│  Page transitions       │    │    → setActiveIndex     │
+│  Reanimated indicator ◄─┼────┼──── withTiming          │
+│  ScrollView tab swipe   │    │  Tab centering (scrollTo)│
+│                         │    │  onTabChange (deferred) │
 └─────────────────────────┘    └─────────────────────────┘
 
-  Content swiping    → UI thread (PagerView native)
-  Tab bar swiping    → UI thread (ScrollView native)
-  Indicator sliding  → UI thread (Reanimated worklet)
-  Tab centering      → JS thread (scrollTo)
+  Swipe gesture    → Native thread (PagerView, 60fps, zero JS)
+  Tab bar scroll   → Native thread (ScrollView, 60fps)
+  Indicator move   → UI thread (withTiming, after swipe completes)
+  Tab centering    → JS thread (scrollTo, after swipe completes)
+  onTabChange      → JS thread (deferred to idle)
 
-  Result: gesture tracking never drops below 60fps
+  Key: swipe and tab don't wait for each other.
+  The initiator runs at 60fps, the follower catches up afterward.
 ```
 
 ### Tab Bar — Smooth Swipe with Virtual Loop

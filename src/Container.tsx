@@ -15,10 +15,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import type {
-  PagerViewOnPageScrollEvent,
-  PagerViewOnPageSelectedEvent,
-} from "react-native-pager-view";
+import type { PagerViewOnPageSelectedEvent } from "react-native-pager-view";
 import PagerView from "react-native-pager-view";
 import { useSharedValue } from "react-native-reanimated";
 import { TabsProvider } from "./Context";
@@ -99,10 +96,6 @@ export const Container: React.FC<TabsContainerProps> = ({
   // Reanimated SharedValue for scroll tracking (collapsible-tab-view compatibility)
   const scrollY = useSharedValue(0);
 
-  // PagerView のスクロール進捗（realIndex ベースの連続値）
-  // 例: タブ0→1 スワイプ中に 0.0〜1.0、タブ2→3 で 2.0〜3.0
-  const scrollProgress = useSharedValue(0);
-
   // --- PagerView 用仮想ページ配列 ---
   // 仮想インデックス方式: tabs.length × BUFFER_MULTIPLIER の仮想ページを生成
   // 各ページの realIndex = virtualIndex % tabs.length
@@ -126,9 +119,11 @@ export const Container: React.FC<TabsContainerProps> = ({
     return center - (center % tabs.length);
   }, [infiniteScroll, tabs.length, pages.length]);
 
-  // 1-D: pages ルックアップテーブル（onPageScroll で毎フレーム参照するため事前生成）
-  // pagerIndex → realIndex のマッピング
-  const pageRealIndexes = useMemo(() => pages.map((p) => p.realIndex), [pages]);
+  // pages ルックアップテーブル（onPageSelected で参照）
+  const pageRealIndexesMemo = useMemo(
+    () => pages.map((p) => p.realIndex),
+    [pages],
+  );
 
   // インデックス正規化
   const normalizeIndex = useCallback(
@@ -173,7 +168,7 @@ export const Container: React.FC<TabsContainerProps> = ({
       if (isJumpingRef.current) return;
 
       const position = e.nativeEvent.position;
-      const realIndex = pageRealIndexes[position];
+      const realIndex = pageRealIndexesMemo[position];
       if (realIndex === undefined) return;
 
       const prevIndex = prevActiveIndexRef.current;
@@ -197,34 +192,13 @@ export const Container: React.FC<TabsContainerProps> = ({
         }
       }
     },
-    [pageRealIndexes, infiniteScroll, tabs.length, pages.length, centerPage],
-  );
-
-  // タブタップ中フラグ（onPageScroll の scrollProgress 更新をスキップ）
-  // タブタップ → setPage でアニメーションが走ると onPageScroll も発火するが、
-  // この間は useEffect の withTiming に任せ、二重更新の競合を防ぐ
-  const isTabPressingRef = useRef(false);
-
-  // onPageScroll: スワイプ中にリアルタイムで呼ばれる（毎フレーム）
-  // 1-D: ルックアップテーブルで配列参照を O(1) に最適化
-  const handlePageScroll = useCallback(
-    (e: PagerViewOnPageScrollEvent) => {
-      if (isJumpingRef.current || isTabPressingRef.current) return;
-
-      const { position, offset } = e.nativeEvent;
-      const currentReal = pageRealIndexes[position];
-      if (currentReal === undefined) return;
-
-      const nextReal = pageRealIndexes[position + 1] ?? currentReal;
-
-      // realIndex ベースの連続値に変換
-      if (nextReal < currentReal && offset > 0) {
-        scrollProgress.value = currentReal + offset;
-      } else {
-        scrollProgress.value = currentReal + (nextReal - currentReal) * offset;
-      }
-    },
-    [pageRealIndexes, scrollProgress],
+    [
+      pageRealIndexesMemo,
+      infiniteScroll,
+      tabs.length,
+      pages.length,
+      centerPage,
+    ],
   );
 
   // onPageScrollStateChanged: スクロール状態が変わったときに呼ばれる
@@ -248,7 +222,6 @@ export const Container: React.FC<TabsContainerProps> = ({
 
       // state === "idle"
       isUserDraggingRef.current = false;
-      isTabPressingRef.current = false;
 
       // 1-C: idle 時に遅延した onTabChange を flush
       const pendingChange = pendingTabChangeRef.current;
@@ -309,9 +282,6 @@ export const Container: React.FC<TabsContainerProps> = ({
       prevActiveIndexRef.current = normalized;
       setActiveIndex(normalized);
       triggerTabChange(normalized, prevIndex);
-
-      // タブタップ中は scrollProgress 更新をスキップ（withTiming と競合防止）
-      isTabPressingRef.current = true;
 
       // PagerView のページ切替
       if (infiniteScroll && tabs.length > 1) {
@@ -490,7 +460,6 @@ export const Container: React.FC<TabsContainerProps> = ({
               onTabPress: handleTabPress,
               infiniteScroll,
               centerActive: tabBarCenterActive,
-              scrollProgress,
             })
           ) : (
             <DefaultTabBar
@@ -499,7 +468,6 @@ export const Container: React.FC<TabsContainerProps> = ({
               onTabPress={handleTabPress}
               infiniteScroll={infiniteScroll}
               centerActive={tabBarCenterActive}
-              scrollProgress={scrollProgress}
               ref={tabScrollRef}
             />
           )}
@@ -512,7 +480,6 @@ export const Container: React.FC<TabsContainerProps> = ({
             style={styles.pagerView}
             initialPage={initialPage}
             offscreenPageLimit={offscreenPageLimit}
-            onPageScroll={handlePageScroll}
             onPageSelected={handlePageSelected}
             onPageScrollStateChanged={handlePageScrollStateChanged}
           >

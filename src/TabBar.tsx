@@ -16,9 +16,6 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
-  scrollTo as reanimatedScrollTo,
-  useAnimatedReaction,
-  useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -106,23 +103,17 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
       onTabPress,
       infiniteScroll,
       centerActive,
-      scrollProgress,
       activeColor = "#000",
       inactiveColor = "#999",
       indicatorStyle: indicatorStyleProp,
     },
     forwardedRef,
   ) => {
-    const animatedScrollRef = useAnimatedRef<ScrollView>();
     const localScrollRef = useRef<ScrollView | null>(null);
 
-    // Merge forwarded ref, local ref, and animated ref
     const setRef = useCallback(
       (node: ScrollView | null) => {
         localScrollRef.current = node;
-        (
-          animatedScrollRef as unknown as { current: ScrollView | null }
-        ).current = node;
         if (typeof forwardedRef === "function") {
           forwardedRef(node);
         } else if (forwardedRef) {
@@ -130,7 +121,7 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
             node;
         }
       },
-      [forwardedRef, animatedScrollRef],
+      [forwardedRef],
     );
 
     const hasInitiallyScrolled = useRef(false);
@@ -209,49 +200,6 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
       [flushLayouts],
     );
 
-    // scrollProgress ベースのリアルタイムインジケーター + タブバー中央寄せ（UI thread 完結）
-    const centerOffset = infiniteScroll ? tabs.length : 0;
-
-    useAnimatedReaction(
-      () => scrollProgress?.value,
-      (progress) => {
-        if (progress === undefined || progress === null) return;
-        const xs = tabLayoutXs.value;
-        const widths = tabLayoutWidths.value;
-        if (xs.length === 0) return;
-
-        const virtualProgress = progress + centerOffset;
-        const currentIdx = Math.floor(virtualProgress);
-        const nextIdx = currentIdx + 1;
-        const fraction = virtualProgress - currentIdx;
-
-        if (currentIdx < 0 || currentIdx >= xs.length) return;
-
-        const currentX = xs[currentIdx] ?? 0;
-        const currentW = widths[currentIdx] ?? 0;
-        const nextX = nextIdx < xs.length ? (xs[nextIdx] ?? 0) : currentX;
-        const nextW = nextIdx < xs.length ? (widths[nextIdx] ?? 0) : currentW;
-
-        indicatorX.value = currentX + (nextX - currentX) * fraction;
-        indicatorWidth.value = currentW + (nextW - currentW) * fraction;
-
-        // タブバー中央寄せ: UI thread で直接 scrollTo（JS thread バイパス）
-        if (centerActive) {
-          const indicatorCenter = indicatorX.value + indicatorWidth.value / 2;
-          const scrollX = Math.max(0, indicatorCenter - SCREEN_WIDTH / 2);
-          reanimatedScrollTo(animatedScrollRef, scrollX, 0, false);
-        }
-      },
-      [
-        scrollProgress,
-        tabLayoutXs,
-        tabLayoutWidths,
-        centerOffset,
-        centerActive,
-        animatedScrollRef,
-      ],
-    );
-
     // インジケーター初期化 + センタリング（rAF flush 後に実行）
     const hasInitialIndicator = useRef(false);
 
@@ -281,7 +229,7 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
 
     layoutFlushCallbackRef.current = updateIndicatorAndCenter;
 
-    // activeIndex 変更時（タブタップ）: scrollProgress の有無に関係なく withTiming で移動
+    // activeIndex 変更時: withTiming でインジケーター移動 + センタリング
     useEffect(() => {
       if (!hasInitialIndicator.current) return;
 
@@ -301,13 +249,7 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
           });
         }
       }
-    }, [
-      activeVirtualIndex,
-      centerActive,
-      indicatorX,
-      indicatorWidth,
-      scrollProgress,
-    ]);
+    }, [activeVirtualIndex, centerActive, indicatorX, indicatorWidth]);
 
     // インジケーターのアニメーションスタイル
     const indicatorStyle = useAnimatedStyle(() => ({

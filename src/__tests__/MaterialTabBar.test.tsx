@@ -141,39 +141,8 @@ describe("MaterialTabBar", () => {
     });
   });
 
-  describe("scrollProgress", () => {
-    it("scrollProgress なしでもレンダリングされる", () => {
-      const { getByText } = render(
-        <MaterialTabBar
-          tabs={mockTabs}
-          activeIndex={0}
-          onTabPress={vi.fn()}
-          infiniteScroll={false}
-          centerActive={true}
-        />,
-      );
-
-      expect(getByText("Tab 1")).toBeTruthy();
-    });
-
-    it("scrollProgress ありでもレンダリングされる", () => {
-      const scrollProgress = { value: 0 };
-      const { getByText } = render(
-        <MaterialTabBar
-          tabs={mockTabs}
-          activeIndex={0}
-          onTabPress={vi.fn()}
-          infiniteScroll={false}
-          centerActive={true}
-          scrollProgress={scrollProgress as any}
-        />,
-      );
-
-      expect(getByText("Tab 1")).toBeTruthy();
-    });
-
-    it("scrollProgress ありで activeIndex 変更時にクラッシュしない", () => {
-      const scrollProgress = { value: 0 };
+  describe("activeIndex 変更", () => {
+    it("activeIndex 変更時にクラッシュしない", () => {
       const { rerender, getByText } = render(
         <MaterialTabBar
           tabs={mockTabs}
@@ -181,11 +150,9 @@ describe("MaterialTabBar", () => {
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
-          scrollProgress={scrollProgress as any}
         />,
       );
 
-      // activeIndex を変更（タブタップ相当）
       rerender(
         <MaterialTabBar
           tabs={mockTabs}
@@ -193,7 +160,6 @@ describe("MaterialTabBar", () => {
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
-          scrollProgress={scrollProgress as any}
         />,
       );
 
