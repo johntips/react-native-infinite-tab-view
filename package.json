@@ -12,8 +12,8 @@
     "lint": "biome check",
     "lint:fix": "biome check --write",
     "format": "biome format --write",
-    "test": "NODE_OPTIONS='--no-experimental-detect-module' vitest",
-    "test:watch": "NODE_OPTIONS='--no-experimental-detect-module' vitest --watch",
+    "test": "NODE_OPTIONS='--no-experimental-detect-module' vitest run",
+    "test:watch": "NODE_OPTIONS='--no-experimental-detect-module' vitest",
     "test:coverage": "NODE_OPTIONS='--no-experimental-detect-module' vitest --coverage"
   },
   "keywords": [
