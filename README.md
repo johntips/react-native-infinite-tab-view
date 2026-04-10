@@ -1,5 +1,26 @@
 # react-native-infinite-tab-view
 
+> ## ⚠️ DEPRECATED — please use [`react-native-infinite-material-tab`](https://github.com/johntips/react-native-infinite-material-tab) instead
+>
+> All active development and performance improvements now happen in
+> [`react-native-infinite-material-tab`](https://www.npmjs.com/package/react-native-infinite-material-tab).
+> That package includes the critical **v0.2.0 lazy-mount fix** (up to 100× lower
+> mount cost per tab switch) which is **not** backported here.
+>
+> このパッケージは **メンテナンスモード** です。新しいバージョンの
+> [`react-native-infinite-material-tab`](https://www.npmjs.com/package/react-native-infinite-material-tab)
+> に移行してください。重要なパフォーマンス修正 (v0.2.0 の 10x マウント問題の解消) は
+> 移行先にのみ入っています。
+>
+> **Migration**:
+> ```diff
+> - import { Tabs } from "react-native-infinite-tab-view";
+> + import { Tabs } from "react-native-infinite-material-tab";
+> ```
+> API はほぼ互換 (Tabs.Container / Tabs.Tab / Tabs.FlashList / Tabs.FlatList / Tabs.ScrollView / useIsNearby / useActiveTabIndex)。
+
+---
+
 Infinite scroll tab view for React Native — built on **PagerView** + **Reanimated** for native-grade performance.
 
 **New Architecture ready** | **Expo 55+ compatible** | **Drop-in replacement for react-native-collapsible-tab-view**

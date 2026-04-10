@@ -1,0 +1,47 @@
+# CI workflow — runs on every PR and push to main
+#
+# This file is managed by gh-infra. Edit the template in
+# github-config/files/common/.github/workflows/ci.yml and run
+# `gh infra apply` to roll out changes to all repositories.
+#
+# sha_pinning_required is enabled on this repo, so all third-party actions
+# must be pinned to a commit SHA. actions/* are exempt (GitHub-owned).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: typecheck + test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm tsc --noEmit
+      - name: Lint
+        run: pnpm lint
+      - name: Test
+        run: pnpm test --run

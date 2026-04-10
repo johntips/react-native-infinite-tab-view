@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions (Q&A, ideas)
+    url: https://github.com/johntips/react-native-infinite-tab-view/discussions
+    about: For questions, usage help, and general discussion, please use Discussions.
+  - name: 📚 Documentation
+    url: https://github.com/johntips/react-native-infinite-tab-view#readme
+    about: Check the README first — many questions are answered there.

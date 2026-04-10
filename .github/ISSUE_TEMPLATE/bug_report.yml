@@ -1,0 +1,86 @@
+name: 🐛 Bug report
+description: Report a reproducible bug
+labels: ["type:bug", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug report! Please fill out the sections below so we can reproduce and fix it quickly.
+
+        バグ報告ありがとうございます。以下を埋めていただけると助かります。
+
+  - type: input
+    id: library-version
+    attributes:
+      label: Library version
+      description: Which version of the library are you using?
+      placeholder: e.g. 0.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: rn-version
+    attributes:
+      label: React Native / Expo version
+      placeholder: e.g. RN 0.83.4, Expo SDK 55
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Platforms
+      multiple: true
+      options:
+        - iOS (simulator)
+        - iOS (device)
+        - Android (emulator)
+        - Android (device)
+        - Web
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug
+      placeholder: |
+        Describe the actual behavior you observed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: |
+        A link to a minimal reproduction (Expo Snack, CodeSandbox, GitHub repo).
+        Issues without a reproduction may be closed.
+      placeholder: https://snack.expo.dev/...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack trace
+      render: shell
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Self-check
+      options:
+        - label: I searched existing issues and confirmed this is a new report
+          required: true
+        - label: I am using the latest version of the library
+          required: true
