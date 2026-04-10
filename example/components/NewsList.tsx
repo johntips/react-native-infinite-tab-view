@@ -3,7 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InteractionManager, StyleSheet, Text, View } from "react-native";
 import {
   Tabs,
-  useActiveTabIndex,
+  useActiveTabIndexValue,
   useIsNearby,
   useTabs,
 } from "react-native-infinite-tab-view";
@@ -35,7 +35,8 @@ const keyExtractor = (item: NewsItem) => item.id;
  */
 export const NewsList: React.FC<NewsListProps> = memo(({ category }) => {
   const tabName = category.toLowerCase();
-  const activeIndex = useActiveTabIndex();
+  // v4: useActiveTabIndexValue は JS 値（number）を返す（re-render あり）
+  const activeIndex = useActiveTabIndexValue();
   const tabs = useTabs();
   const isActive = tabs[activeIndex]?.name === tabName;
   const [ready, setReady] = useState(false);

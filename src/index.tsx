@@ -16,6 +16,7 @@ export { useTabsContext } from "./Context";
 // Hooks
 export {
   useActiveTabIndex,
+  useActiveTabIndexValue,
   useCurrentTabScrollY,
   useIsNearby,
   useNearbyIndexes,
