@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.4.1] - 2026-04-11
+
+### Cleaned up
+
+- Remove dead refs (`currentActiveIndexRef`, `currentNearbyIndexesRef`) from `Container` — the subscription API now reads `SharedValue` directly in `getInitialActive`/`getInitialNearby`.
+- Simplify `notifyNearbyChange` by dropping the unused `currentSet` argument.
+- Bilingual (JP/EN) comments throughout `Container` and example `NewsList` for the OSS audience.
+- Example `NewsList`: delete the consumer-side "primary instance claim" workaround. The library-level `lazy` fix in v4.4.0 makes it unnecessary.
+
+### Added
+
+- Regression test for the `lazy=true` + `infiniteScroll=true` combo: asserts that `BUFFER_MULTIPLIER` virtual copies do NOT all render children on initial mount.
+
 ## [4.4.0] - 2026-04-11
 
 ### 🎯 Performance — Critical lazy mount fix

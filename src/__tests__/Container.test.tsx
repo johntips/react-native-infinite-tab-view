@@ -645,5 +645,52 @@ describe("Container", () => {
       expect(queryByText("Content 1")).toBeTruthy();
       expect(queryByText("Content 2")).toBeTruthy();
     });
+
+    // v4.4.0 regression test: lazy=true + infiniteScroll=true の組合せで、
+    // 同じ realIndex を持つ複数の virtual page が存在しても、consumer の children は
+    // 初期 nearby window (pagerIndex ベース) の分だけ render されることを保証する。
+    //
+    // v4.4.0 regression test: under `lazy=true` + `infiniteScroll=true`, even
+    // though multiple virtual pages share the same realIndex, consumer children
+    // must only render for the initial nearby window (pagerIndex-based).
+    //
+    // Without this fix, `BUFFER_MULTIPLIER` (=10) copies of each realIndex would
+    // all render children, causing a single tab activation to trigger up to 10
+    // parallel HeavyContent mounts (measured: 400-750ms dispatch latency).
+    it("lazy=true + infiniteScroll=true: consumer children は 1 realIndex あたり nearby window の数だけ render される (BUFFER_MULTIPLIER 分の複製を render しない)", () => {
+      const { getAllByText } = render(
+        <Container lazy={true} infiniteScroll={true} offscreenPageLimit={1}>
+          <Tab name="tab1" label="Tab 1">
+            <Text>Content 1</Text>
+          </Tab>
+          <Tab name="tab2" label="Tab 2">
+            <Text>Content 2</Text>
+          </Tab>
+          <Tab name="tab3" label="Tab 3">
+            <Text>Content 3</Text>
+          </Tab>
+        </Container>,
+      );
+
+      // nearby window = offscreenPageLimit=1 なので、初期 centerPage ± 1 の
+      // 3 つの pagerIndex が render される。これらは隣接する 3 つの realIndex
+      // (2, 0, 1 など、centerPage の計算次第) に対応するので、各 content は
+      // **最大 1 回**だけ render される。
+      //
+      // The nearby window is centerPage ± 1 (3 pagerIndexes). These map to 3
+      // consecutive realIndexes — so each content should render AT MOST ONCE.
+      // Before v4.4.0, each content rendered BUFFER_MULTIPLIER (=10) times.
+      const content1 = getAllByText("Content 1");
+      const content2 = getAllByText("Content 2");
+      const content3 = getAllByText("Content 3");
+
+      // 上限は nearby window に相当する 1 だけ。BUFFER_MULTIPLIER=10 が
+      // 再現してしまう regression を検出する。
+      // Upper bound: 1 per realIndex. Catches regressions that re-introduce
+      // the BUFFER_MULTIPLIER=10 duplication bug.
+      expect(content1.length).toBeLessThanOrEqual(1);
+      expect(content2.length).toBeLessThanOrEqual(1);
+      expect(content3.length).toBeLessThanOrEqual(1);
+    });
   });
 });

@@ -36,130 +36,67 @@ const renderItem = ({ item }: { item: NewsItem }) => <NewsCard item={item} />;
 const keyExtractor = (item: NewsItem) => item.id;
 
 /**
- * ========================================================================
- * Heavy Content Primary Claim
- * ========================================================================
+ * News list lightweight wrapper.
  *
- * infinite scroll mode では library の Container が `BUFFER_MULTIPLIER = 10`
- * に従って 1 realIndex あたり 10 個の virtual page を作る。各 virtual page は
- * 独自の React インスタンスで同じ NewsList を mount する。
+ * ニュースリスト軽量ラッパー。
  *
- * これにより、1 タブ切り替えで **HeavyNewsListContent が 10 インスタンス
- * 同時に mount** され、useMockQuery × 3、FlashList、30+ hooks が 10 倍の
- * コストで JS thread を占有する (実測: 1 タブあたり mount-cost 10 件、
- * dispatch latency 400-700ms)。
+ * Async Follow Design:
+ * - Before activation: skeleton only (4 hooks).
+ * - On activation: use InteractionManager to wait for the swipe animation to
+ *   complete, then mount the heavy content.
+ * - After leaving (isActive=false AND isNearby=false): unmount the Heavy
+ *   content to release JS thread resources.
  *
- * 対策: モジュールレベルの Map で "このカテゴリの primary インスタンスは誰か"
- * を追跡し、最初に claim したインスタンスだけ HeavyContent を mount する。
- * 残りの 9 インスタンスは NewsListSkeleton のまま維持する。
+ * v4.4.0 note: the library's `lazy={true}` + infinite scroll bug (10x mount
+ * duplication per realIndex) has been fixed at the library level. Consumers
+ * no longer need a primary-instance claim hack — this wrapper is a faithful
+ * demonstration of the "recommended consumer pattern" without workarounds.
  *
- * これは library を変えずに済む consumer side 解決策で、同じパターンを
- * production の PackList 相当にも適用できる。
- */
-type PrimaryEntry = {
-  instanceId: number;
-  // 現在 non-primary で待機中のインスタンスの setState コールバック一覧。
-  // primary が unmount したら先頭を promote する。
-  waiters: Array<(v: boolean) => void>;
-};
-const primaryByCategory = new Map<string, PrimaryEntry>();
-let nextInstanceId = 1;
-
-function useHeavyPrimaryClaim(category: string): boolean {
-  const instanceIdRef = useRef<number>(0);
-  if (instanceIdRef.current === 0) {
-    instanceIdRef.current = nextInstanceId++;
-  }
-  const [isPrimary, setIsPrimary] = useState<boolean>(() => {
-    const key = category.toLowerCase();
-    const existing = primaryByCategory.get(key);
-    if (!existing) {
-      primaryByCategory.set(key, {
-        instanceId: instanceIdRef.current,
-        waiters: [],
-      });
-      return true;
-    }
-    return false;
-  });
-
-  useEffect(() => {
-    const key = category.toLowerCase();
-    const id = instanceIdRef.current;
-    // useState lazy init で既に primary になっていなければ、waiter として登録
-    if (!isPrimary) {
-      const entry = primaryByCategory.get(key);
-      if (entry) {
-        entry.waiters.push(setIsPrimary);
-      }
-    }
-    return () => {
-      const entry = primaryByCategory.get(key);
-      if (!entry) return;
-      if (entry.instanceId === id) {
-        // 自分が primary だった → 解放して次の waiter を promote
-        const next = entry.waiters.shift();
-        if (next) {
-          primaryByCategory.set(key, {
-            instanceId: -1, // 一時的に不明、下で waiter が setIsPrimary(true) した後どうせ再 claim される
-            waiters: entry.waiters,
-          });
-          next(true);
-        } else {
-          primaryByCategory.delete(key);
-        }
-      } else {
-        // 自分は waiter だった → リストから除去
-        const idx = entry.waiters.indexOf(setIsPrimary);
-        if (idx >= 0) entry.waiters.splice(idx, 1);
-      }
-    };
-  }, [category, isPrimary]);
-
-  return isPrimary;
-}
-
-/**
- * ニュースリスト軽量ラッパー
- *
- * Async Follow Design (v2):
- * - アクティブ化前: スケルトンのみ表示（hooks 4個）
- * - アクティブ化後: InteractionManager でスワイプアニメ完了を待ち、重いコンテンツをマウント
- * - **通過後 (isActive=false AND isNearby=false)**: HeavyNewsListContent をアンマウント
- *   → JS thread 競合を根絶。9 タブ swipe しても同時 mount は最大 3 タブ（active + nearby±1）
- *
- * トレードオフ:
- * - 一度離れたタブに戻ると Heavy が再 mount される（useMockQuery が再 fetch する）
- *   → 実アプリでは React Query/tRPC のキャッシュで再 fetch コストを吸収する想定
- * - 計測ログ上、再訪問時も "mount" が再計測される（意図通り）
+ * v4.4.0 注記: ライブラリ側で `lazy={true}` + infinite scroll の 10x mount
+ * 複製 bug が直ったため、consumer 側で primary インスタンス claim を自前で
+ * 実装する必要はない。このラッパーは "推奨される consumer パターン" の
+ * 最小実装として、ワークアラウンドなしで動作する。
  */
 export const NewsList: React.FC<NewsListProps> = memo(
   ({ category, tabIndex }) => {
-    // Heavy primary claim: カテゴリあたり 1 インスタンスだけ Heavy を mount する。
-    // infinite scroll の virtual page 複製 (BUFFER_MULTIPLIER=10) による 10x mount 問題の対策。
-    const isPrimary = useHeavyPrimaryClaim(category);
-
+    // v4.4.0: Subscribe directly to the Container's centralized subscription.
+    // Before v4.4.0 each NewsList had its own useAnimatedReaction (20+ per
+    // screen); now the Container runs a single reaction and notifies this
+    // instance via a callback. This reduces React commit cost on tab switch.
+    //
     // v4.4.0: Container 側の centralized subscription を直接購読する。
-    // 従来は NewsList 毎に useAnimatedReaction を持っていた (20 個並列) が、
-    // 今は Container の 1 個の reaction から通知を受け取るだけ。
-    // → React commit 時の batch サイズが劇的に減少し、dispatch latency が改善する。
+    // 従来は NewsList 毎に useAnimatedReaction を持っていたが、今は Container
+    // の 1 個の reaction から通知を受け取るだけ。React commit 時の batch
+    // サイズが減り、dispatch latency が改善する。
     const ctx = useTabsContext();
     const [isActive, setIsActive] = useState(() =>
       ctx.subscriptions.getInitialActive(tabIndex),
     );
     // isNearby も同じく centralized subscription 経由
+    // isNearby also goes through the centralized subscription.
     const isNearby = useIsNearby(category.toLowerCase());
+
+    // Whether to mount the heavy content or show the lightweight skeleton.
+    // - false: render NewsListSkeleton (cheap)
+    // - true:  mount HeavyNewsListContent (30+ hooks, useMockQuery, FlashList)
+    //
     // Heavy コンテンツを表示してよい状態か。
     // - false: NewsListSkeleton を表示（軽量）
     // - true: HeavyNewsListContent を mount（30+ hooks、useMockQuery、etc）
     const [ready, setReady] = useState(tabIndex === 0);
+
+    // The mount log fires exactly once per activation session via this ref.
+    // Rapidly flipping isActive during a swipe must not produce duplicate logs.
+    //
     // mount ログは "このインスタンスで active になった瞬間" だけ出す。
     // isActive が高速で true↔false する swipe 中に useEffect が多重発火しても、
     // markListPhase("mount") は 1 回しか呼ばれないよう ref で固定する。
-    // 遠くに離れて Heavy がアンマウントされたら false に戻し、次回再計測可能にする。
     const mountLoggedRef = useRef(false);
 
-    // perf 計測を兼ねた subscription callback
+    // Subscribe to active changes. The workletTime argument comes from the
+    // Container's worklet and enables measuring the worklet→JS bridge hop.
+    //
+    // perf 計測を兼ねた subscription callback。
     // workletTime は Container の worklet で取得された performance.now() 値。
     // markActivation に渡すことで hop latency が計測できる。
     useEffect(() => {
@@ -169,11 +106,16 @@ export const NewsList: React.FC<NewsListProps> = memo(
         }
         setIsActive(next);
       };
+      // Sync the latest value on mount (covers edge cases where activeIndex
+      // changed between initial state and effect fire).
       // マウント時に最新値で同期
       setIsActive(ctx.subscriptions.getInitialActive(tabIndex));
       return ctx.subscriptions.subscribeToActive(tabIndex, handleActiveChange);
     }, [tabIndex, category, ctx.subscriptions]);
 
+    // On activation: schedule HeavyContent mount via InteractionManager so the
+    // swipe animation finishes before the heavy React work begins.
+    //
     // アクティブ化 → Heavy mount （InteractionManager でスワイプアニメ完了を待つ）
     useEffect(() => {
       if (isActive && !ready) {
@@ -189,21 +131,17 @@ export const NewsList: React.FC<NewsListProps> = memo(
       }
     }, [isActive, ready, category]);
 
+    // Far away (neither active nor nearby) → unmount HeavyContent so its
+    // setTimeouts / useEffects / useMemos stop consuming the JS thread.
+    //
     // 遠くに離れた (active でなく nearby でもない) → Heavy アンマウント
     // これにより通過後のタブの setTimeout/useEffect/useMemo が JS thread から退避される。
     useEffect(() => {
       if (!isActive && !isNearby && ready) {
         setReady(false);
-        mountLoggedRef.current = false; // 次回 active 化時に再計測できるようリセット
+        mountLoggedRef.current = false; // allow re-measurement on next activation
       }
     }, [isActive, isNearby, ready]);
-
-    // NOTE: primary claim は一旦無効化。consumer 側で claim すると
-    // PagerView の "visible pagerIndex" と primary instance が一致せず、
-    // user が見てる tab が skeleton で固まる問題が出るため。
-    // 正しい fix は library 側 (Container.tsx) で mountedIndexes を
-    // realIndex ではなく pagerIndex でトラックすること。
-    void isPrimary;
 
     if (!ready) {
       return <NewsListSkeleton />;

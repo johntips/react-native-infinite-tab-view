@@ -493,23 +493,20 @@ export const Container: React.FC<TabsContainerProps> = ({
     new Map(),
   );
 
-  // 現在の active/nearby 状態 (初期値取得用、ref で保持)
-  const currentActiveIndexRef = useRef(0);
-  const currentNearbyIndexesRef = useRef<Set<number>>(new Set([0]));
-
-  // JS thread で呼ばれる通知関数
-  // workletTime は worklet 側で取った performance.now() 値 (hop 計測用、省略可)
+  // JS thread で呼ばれる通知関数。subscribers に active/nearby 状態を伝える。
+  // JS-thread notifier: dispatch active/nearby changes to subscribers.
+  // workletTime は worklet 側で取った performance.now() 値 (hop 計測用、省略可)。
+  // workletTime is captured on the worklet side (optional; used for hop latency metrics).
   const notifyActiveChange = useCallback(
     (prev: number, current: number, workletTime?: number) => {
-      currentActiveIndexRef.current = current;
-      // prev を false に
+      // 旧 active を false に / Flip previous active → false
       if (prev !== current && prev >= 0) {
         const set = activeSubscribersRef.current.get(prev);
         if (set) {
           for (const cb of set) cb(false, workletTime);
         }
       }
-      // current を true に
+      // 新 active を true に / Flip new active → true
       if (current >= 0) {
         const set = activeSubscribersRef.current.get(current);
         if (set) {
@@ -521,8 +518,7 @@ export const Container: React.FC<TabsContainerProps> = ({
   );
 
   const notifyNearbyChange = useCallback(
-    (added: number[], removed: number[], currentSet: number[]) => {
-      currentNearbyIndexesRef.current = new Set(currentSet);
+    (added: number[], removed: number[]) => {
       for (const idx of added) {
         const set = nearbySubscribersRef.current.get(idx);
         if (set) {
@@ -560,7 +556,8 @@ export const Container: React.FC<TabsContainerProps> = ({
     () => nearbyIndexes.value,
     (current, prev) => {
       if (!prev) return;
-      // 差分計算を worklet 内で (JS thread にデータを渡す量を減らす)
+      // 差分計算を worklet 内で行い、JS thread には added/removed だけ渡す
+      // Compute the diff in the worklet; cross the bridge with only the minimal payload.
       const added: number[] = [];
       const removed: number[] = [];
       for (const idx of current) {
@@ -570,7 +567,7 @@ export const Container: React.FC<TabsContainerProps> = ({
         if (!current.includes(idx)) removed.push(idx);
       }
       if (added.length === 0 && removed.length === 0) return;
-      runOnJS(notifyNearbyChange)(added, removed, current);
+      runOnJS(notifyNearbyChange)(added, removed);
     },
     [notifyNearbyChange],
   );
