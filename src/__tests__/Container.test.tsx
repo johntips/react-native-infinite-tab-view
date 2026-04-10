@@ -12,7 +12,8 @@ function NearbyCapture({
   onCapture: (indexes: number[]) => void;
 }) {
   const { nearbyIndexes } = useTabsContext();
-  onCapture(nearbyIndexes);
+  // v4: SharedValue<number[]> → .value
+  onCapture(nearbyIndexes.value);
   return <Text>Capture</Text>;
 }
 
@@ -99,11 +100,11 @@ describe("Container", () => {
   });
 
   describe("状態管理", () => {
-    it("activeIndex の初期値は 0", () => {
+    it("activeIndex の初期値は 0 (SharedValue)", () => {
       const { getByText } = render(
         <Container
           renderTabBar={({ activeIndex }) => (
-            <Text>Active Index: {activeIndex}</Text>
+            <Text>Active Index: {activeIndex.value}</Text>
           )}
         >
           <Tab name="tab1" label="Tab 1">
@@ -484,7 +485,7 @@ describe("Container", () => {
         <Container
           infiniteScroll={false}
           renderTabBar={(props) => {
-            capturedActiveIndex = props.activeIndex;
+            capturedActiveIndex = props.activeIndex.value;
             return <View />;
           }}
         >

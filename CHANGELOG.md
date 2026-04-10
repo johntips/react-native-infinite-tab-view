@@ -5,6 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-04-10
+
+### 🚨 BREAKING CHANGES
+
+**`activeIndex` を JS state から SharedValue に変更。React re-render を完全排除。**
+
+#### Before (v3.x)
+```tsx
+const activeIndex = useActiveTabIndex();  // number
+const isFocused = activeIndex === myIndex;  // 毎回 re-render
+```
+
+#### After (v4.0)
+```tsx
+const activeIndex = useActiveTabIndex();  // SharedValue<number>
+useAnimatedReaction(
+  () => activeIndex.value,
+  (current) => { /* UI thread で実行 */ },
+);
+
+// JS 値が必要な場合のみ（re-render 発生）:
+const activeIndexValue = useActiveTabIndexValue();  // number
+```
+
+### API 変更
+
+| API | v3.x | v4.0 |
+|-----|------|------|
+| `useActiveTabIndex()` | `number` | `SharedValue<number>` |
+| `useNearbyIndexes()` | `number[]` | `SharedValue<number[]>` |
+| `TabBarProps.activeIndex` | `number` | `SharedValue<number>` |
+| `TabsContextValue.activeIndex` | `number` | `SharedValue<number>` |
+| `TabsContextValue.nearbyIndexes` | `number[]` | `SharedValue<number[]>` |
+| `useActiveTabIndexValue()` | - | **新規** `number`（re-render あり） |
+
+### Performance
+
+- **スワイプ時の JS thread 処理: 完全ゼロ**
+- `setActiveIndex` (React state) → `activeIndex.value = n` (SharedValue) に変更
+- Context value は SharedValue 参照のみを含むため、activeIndex 変更時も **Consumer が一切 re-render しない**
+- PackList などの重いコンシューマーがスワイプを一切ブロックしない
+
+### Architecture
+
+```
+PagerView onPageSelected (Native)
+  ↓
+activeIndex.value = n (UI thread, 0ms)
+  ↓
+  ├── useAnimatedReaction → インジケーター移動 (UI thread)
+  ├── useDerivedValue → nearbyIndexes 計算 (UI thread)
+  └── React re-render: ゼロ
+```
+
+### Migration Guide
+
+1. `useActiveTabIndex()` の返り値を `.value` で読むか、`useActiveTabIndexValue()` に置き換え
+2. `useNearbyIndexes()` の返り値を `.value` で読む
+3. `TabBarProps.activeIndex` を直接比較してる箇所を `useAnimatedReaction` or `useActiveTabIndexValue` に
+
+## [3.2.1] - 2026-04-10
+
+### Performance
+
+- **setActiveIndex を InteractionManager で遅延**: スワイプアニメーション完了まで React re-render を実行しない。連続スワイプ時に JS thread がフリーになり、次のジェスチャーが詰まらない
+- 連続スワイプ中は古い pending setActiveIndex を cancel し、最新のみ実行
+
 ## [3.2.0] - 2026-04-10
 
 ### Breaking Changes

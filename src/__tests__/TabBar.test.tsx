@@ -14,7 +14,7 @@ describe("DefaultTabBar", () => {
       const { getByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -30,7 +30,7 @@ describe("DefaultTabBar", () => {
       const { getByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={1}
+          activeIndex={{ value: 1 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -48,7 +48,7 @@ describe("DefaultTabBar", () => {
       const { getAllByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={true}
           centerActive={true}
@@ -70,7 +70,7 @@ describe("DefaultTabBar", () => {
       const { getAllByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -96,7 +96,7 @@ describe("DefaultTabBar", () => {
       const { getAllByText } = render(
         <DefaultTabBar
           tabs={largeTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={true}
           centerActive={true}
@@ -116,7 +116,7 @@ describe("DefaultTabBar", () => {
       const { getAllByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={true}
           centerActive={true}
@@ -132,7 +132,7 @@ describe("DefaultTabBar", () => {
       const { getAllByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={1}
+          activeIndex={{ value: 1 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={true}
           centerActive={true}
@@ -150,7 +150,7 @@ describe("DefaultTabBar", () => {
       const { getByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={onTabPress}
           infiniteScroll={false}
           centerActive={true}
@@ -167,7 +167,7 @@ describe("DefaultTabBar", () => {
       const { getAllByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={onTabPress}
           infiniteScroll={true}
           centerActive={true}
@@ -188,7 +188,7 @@ describe("DefaultTabBar", () => {
       const { container } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -203,7 +203,7 @@ describe("DefaultTabBar", () => {
       const { container } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -220,7 +220,7 @@ describe("DefaultTabBar", () => {
       const { getByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -234,7 +234,7 @@ describe("DefaultTabBar", () => {
       const { getByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={1}
+          activeIndex={{ value: 1 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -250,7 +250,7 @@ describe("DefaultTabBar", () => {
       const { container } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -267,7 +267,7 @@ describe("DefaultTabBar", () => {
       const { rerender, getByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -277,7 +277,7 @@ describe("DefaultTabBar", () => {
       rerender(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={2}
+          activeIndex={{ value: 2 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -293,7 +293,7 @@ describe("DefaultTabBar", () => {
       const { getAllByText } = render(
         <DefaultTabBar
           tabs={mockTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}
@@ -320,7 +320,7 @@ describe("DefaultTabBar", () => {
       const { getAllByText } = render(
         <DefaultTabBar
           tabs={longLabelTabs}
-          activeIndex={0}
+          activeIndex={{ value: 0 } as any}
           onTabPress={vi.fn()}
           infiniteScroll={false}
           centerActive={true}

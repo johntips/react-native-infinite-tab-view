@@ -17,7 +17,12 @@ import {
 } from "react-native";
 import type { PagerViewOnPageSelectedEvent } from "react-native-pager-view";
 import PagerView from "react-native-pager-view";
-import { useSharedValue } from "react-native-reanimated";
+import {
+  runOnJS,
+  useAnimatedReaction,
+  useDerivedValue,
+  useSharedValue,
+} from "react-native-reanimated";
 import { TabsProvider } from "./Context";
 import { SCREEN_WIDTH, TAB_BAR_HEIGHT } from "./constants";
 import { DefaultTabBar } from "./TabBar";
@@ -80,7 +85,8 @@ export const Container: React.FC<TabsContainerProps> = ({
     return tabList;
   }, [children]);
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  // activeIndex を SharedValue 化 — re-render なしで UI thread に値を伝播
+  const activeIndex = useSharedValue(0);
   const prevActiveIndexRef = useRef(0);
   const tabScrollRef = useRef<RNScrollView>(null);
 
@@ -163,6 +169,7 @@ export const Container: React.FC<TabsContainerProps> = ({
   } | null>(null);
 
   // onPageSelected: ページが確定したときに呼ばれる
+  // v4: SharedValue に直接書き込み → React re-render 発生せず UI thread に伝播
   const handlePageSelected = useCallback(
     (e: PagerViewOnPageSelectedEvent) => {
       if (isJumpingRef.current) return;
@@ -174,7 +181,8 @@ export const Container: React.FC<TabsContainerProps> = ({
       const prevIndex = prevActiveIndexRef.current;
       prevActiveIndexRef.current = realIndex;
 
-      setActiveIndex(realIndex);
+      // ✅ SharedValue 書き込み: re-render ゼロ
+      activeIndex.value = realIndex;
 
       if (realIndex !== prevIndex) {
         pendingTabChangeRef.current = { newIndex: realIndex, prevIndex };
@@ -187,13 +195,13 @@ export const Container: React.FC<TabsContainerProps> = ({
           position < edgeThreshold ||
           position > pages.length - edgeThreshold
         ) {
-          // 同じ realIndex の中央付近のページに巻き戻し予約
           pendingJumpIndexRef.current = centerPage + realIndex;
         }
       }
     },
     [
       pageRealIndexesMemo,
+      activeIndex,
       infiniteScroll,
       tabs.length,
       pages.length,
@@ -280,7 +288,8 @@ export const Container: React.FC<TabsContainerProps> = ({
       }
 
       prevActiveIndexRef.current = normalized;
-      setActiveIndex(normalized);
+      // ✅ SharedValue 書き込み: re-render ゼロ
+      activeIndex.value = normalized;
       triggerTabChange(normalized, prevIndex);
 
       // PagerView のページ切替
@@ -294,6 +303,7 @@ export const Container: React.FC<TabsContainerProps> = ({
       normalizeIndex,
       triggerTabChange,
       onFocusedTabPress,
+      activeIndex,
       infiniteScroll,
       tabs.length,
       centerPage,
@@ -313,66 +323,82 @@ export const Container: React.FC<TabsContainerProps> = ({
   // タブ名の配列
   const tabNames = useMemo(() => tabs.map((t) => t.name), [tabs]);
 
-  // nearbyIndexes: activeIndex ± offscreenPageLimit の範囲内のインデックス
-  const nearbyIndexes = useMemo(() => {
+  // nearbyIndexes: activeIndex ± offscreenPageLimit の範囲（SharedValue で UI thread 計算）
+  const tabsLength = tabs.length;
+  const nearbyIndexes = useDerivedValue<number[]>(() => {
     const indexes: number[] = [];
+    const current = activeIndex.value;
     for (
-      let i = activeIndex - offscreenPageLimit;
-      i <= activeIndex + offscreenPageLimit;
+      let i = current - offscreenPageLimit;
+      i <= current + offscreenPageLimit;
       i++
     ) {
-      // infiniteScroll の場合はラップアラウンド
       const normalized = infiniteScroll
-        ? ((i % tabs.length) + tabs.length) % tabs.length
+        ? ((i % tabsLength) + tabsLength) % tabsLength
         : i;
-      if (normalized >= 0 && normalized < tabs.length) {
+      if (normalized >= 0 && normalized < tabsLength) {
         if (!indexes.includes(normalized)) {
           indexes.push(normalized);
         }
       }
     }
     return indexes;
-  }, [activeIndex, offscreenPageLimit, tabs.length, infiniteScroll]);
+  }, [activeIndex, offscreenPageLimit, tabsLength, infiniteScroll]);
 
-  // debug log: activeIndex / nearbyIndexes 変更時にログ出力
+  // debug log: activeIndex 変更を UI thread で検知して runOnJS で JS thread に通知
   const prevNearbyRef = useRef<number[]>([]);
+  const logNearbyChange = useCallback(
+    (current: number, nearby: number[]) => {
+      if (!debug) return;
+      const prev = prevNearbyRef.current;
+
+      debugLog({
+        type: "tab-active",
+        tabName: tabs[current]?.name ?? "",
+        tabIndex: current,
+        detail: `nearby: [${nearby.map((i) => tabs[i]?.name).join(", ")}]`,
+      });
+
+      for (const idx of nearby) {
+        if (idx !== current && !prev.includes(idx)) {
+          debugLog({
+            type: "tab-nearby",
+            tabName: tabs[idx]?.name ?? "",
+            tabIndex: idx,
+            detail: "prefetch eligible",
+          });
+        }
+      }
+
+      for (const idx of prev) {
+        if (!nearby.includes(idx)) {
+          debugLog({
+            type: "tab-unmounted",
+            tabName: tabs[idx]?.name ?? "",
+            tabIndex: idx,
+          });
+        }
+      }
+
+      prevNearbyRef.current = nearby;
+    },
+    [debug, debugLog, tabs],
+  );
+
+  useAnimatedReaction(
+    () => ({ active: activeIndex.value, nearby: nearbyIndexes.value }),
+    (curr, prev) => {
+      if (prev && curr.active === prev.active) return;
+      runOnJS(logNearbyChange)(curr.active, curr.nearby);
+    },
+  );
+
+  // 初回マウント時にデバッグログを発火（useAnimatedReaction の初回発火が環境依存のため）
   useEffect(() => {
     if (!debug) return;
-    const prev = prevNearbyRef.current;
-
-    // アクティブタブのログ
-    debugLog({
-      type: "tab-active",
-      tabName: tabs[activeIndex]?.name ?? "",
-      tabIndex: activeIndex,
-      detail: `nearby: [${nearbyIndexes.map((i) => tabs[i]?.name).join(", ")}]`,
-    });
-
-    // 新しく nearby になったタブ
-    for (const idx of nearbyIndexes) {
-      if (idx !== activeIndex && !prev.includes(idx)) {
-        debugLog({
-          type: "tab-nearby",
-          tabName: tabs[idx]?.name ?? "",
-          tabIndex: idx,
-          detail: "prefetch eligible",
-        });
-      }
-    }
-
-    // nearby から外れたタブ
-    for (const idx of prev) {
-      if (!nearbyIndexes.includes(idx)) {
-        debugLog({
-          type: "tab-unmounted",
-          tabName: tabs[idx]?.name ?? "",
-          tabIndex: idx,
-        });
-      }
-    }
-
-    prevNearbyRef.current = nearbyIndexes;
-  }, [activeIndex, nearbyIndexes, tabs, debug, debugLog]);
+    logNearbyChange(activeIndex.value, nearbyIndexes.value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Context値
   const contextValue = useMemo(
@@ -401,23 +427,55 @@ export const Container: React.FC<TabsContainerProps> = ({
   );
 
   // Lazy mount: 一度 nearby になった realIndex を追跡（アンマウントしない）
-  const mountedIndexesRef = useRef<Set<number>>(new Set());
-  if (lazy) {
-    for (const idx of nearbyIndexes) {
-      mountedIndexesRef.current.add(idx);
+  // 初期値は activeIndex=0 の nearby（0 ± offscreenPageLimit）
+  const initialNearby = useMemo(() => {
+    const indexes = new Set<number>();
+    for (let i = -offscreenPageLimit; i <= offscreenPageLimit; i++) {
+      const normalized = infiniteScroll
+        ? ((i % tabsLength) + tabsLength) % tabsLength
+        : i;
+      if (normalized >= 0 && normalized < tabsLength) {
+        indexes.add(normalized);
+      }
     }
-  }
+    return indexes;
+  }, [offscreenPageLimit, tabsLength, infiniteScroll]);
+
+  const [mountedIndexes, setMountedIndexes] =
+    useState<Set<number>>(initialNearby);
+
+  const addMountedIndexes = useCallback((nearby: number[]) => {
+    setMountedIndexes((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const idx of nearby) {
+        if (!next.has(idx)) {
+          next.add(idx);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
+  useAnimatedReaction(
+    () => nearbyIndexes.value,
+    (nearby) => {
+      if (!lazy) return;
+      runOnJS(addMountedIndexes)(nearby);
+    },
+    [lazy],
+  );
 
   // コンテンツビュー（PagerView の children として生成）
   const contentViews = useMemo(() => {
     const childrenArray = Children.toArray(children);
-    const mounted = mountedIndexesRef.current;
 
     return pages.map((page, pagerIndex) => {
       const child = childrenArray[page.realIndex];
 
       // lazy モード: まだ一度も nearby になっていない realIndex は空 View
-      if (lazy && !mounted.has(page.realIndex)) {
+      if (lazy && !mountedIndexes.has(page.realIndex)) {
         return <View key={`pager-lazy-${pagerIndex}`} style={styles.page} />;
       }
 
@@ -430,8 +488,7 @@ export const Container: React.FC<TabsContainerProps> = ({
       }
       return <View key={`pager-empty-${pagerIndex}`} style={styles.page} />;
     });
-    // nearbyIndexes を deps に含めて、新しいタブが nearby になった時に再生成
-  }, [children, pages, lazy, nearbyIndexes]);
+  }, [children, pages, lazy, mountedIndexes]);
 
   // 初期ページ（PagerView の initialPage）
   const initialPage = infiniteScroll && tabs.length > 1 ? centerPage : 0;

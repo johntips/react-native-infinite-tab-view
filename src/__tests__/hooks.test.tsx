@@ -24,8 +24,9 @@ function NearbyIndexesCapture({
   onCapture: (v: number[]) => void;
 }) {
   const indexes = useNearbyIndexes();
-  onCapture(indexes);
-  return <Text>{JSON.stringify(indexes)}</Text>;
+  // v4: SharedValue<number[]> → .value
+  onCapture(indexes.value);
+  return <Text>{JSON.stringify(indexes.value)}</Text>;
 }
 
 describe("useIsNearby", () => {

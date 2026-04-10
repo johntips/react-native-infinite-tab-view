@@ -7,6 +7,7 @@ import type {
   ViewStyle,
 } from "react-native";
 import type PagerView from "react-native-pager-view";
+import type { SharedValue } from "react-native-reanimated";
 
 export interface TabChangeEvent {
   tabName: string;
@@ -72,7 +73,12 @@ export interface TabProps {
 
 export interface TabBarProps {
   tabs: Array<{ name: string; label: string }>;
-  activeIndex: number;
+  /**
+   * アクティブタブのインデックス（SharedValue）
+   * v4.0.0 で `number` から `SharedValue<number>` に変更。
+   * re-render を経由せず UI thread で直接更新される。
+   */
+  activeIndex: SharedValue<number>;
   onTabPress: (index: number) => void;
   infiniteScroll: boolean;
   centerActive: boolean;
@@ -81,11 +87,17 @@ export interface TabBarProps {
 }
 
 export interface TabsContextValue {
-  activeIndex: number;
-  /** アクティブタブ + 隣接タブのインデックス配列（offscreenPageLimit に基づく） */
-  nearbyIndexes: number[];
+  /**
+   * アクティブタブのインデックス（SharedValue）
+   * v4.0.0 で `number` から `SharedValue<number>` に変更。
+   * Consumer の re-render を引き起こさず、UI thread で値が伝播する。
+   */
+  activeIndex: SharedValue<number>;
+  /** アクティブタブ + 隣接タブのインデックス配列（SharedValue） */
+  nearbyIndexes: SharedValue<number[]>;
   tabs: Array<{ name: string; label: string }>;
-  scrollY: any; // Reanimated SharedValue<number>
+  // biome-ignore lint/suspicious/noExplicitAny: Animated.Value の型が Reanimated と混在しないため
+  scrollY: any;
   headerHeight: number;
   infiniteScroll: boolean;
   tabBarCenterActive: boolean;

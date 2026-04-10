@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import {
   Dimensions,
@@ -16,6 +17,8 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
+  runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -161,13 +164,21 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
       });
     }, [tabs, infiniteScroll]);
 
+    // activeIndex (SharedValue) を JS 値にブリッジ（タブ色の描画用）
+    const [activeIndexState, setActiveIndexState] = useState(0);
+    useAnimatedReaction(
+      () => activeIndex.value,
+      (current, prev) => {
+        if (current !== prev) {
+          runOnJS(setActiveIndexState)(current);
+        }
+      },
+    );
+
     // activeIndex に対応する仮想インデックス（中央セット）を取得
-    const activeVirtualIndex = useMemo(() => {
-      if (!infiniteScroll) return activeIndex;
-      // 中央セットのオフセット
-      const centerOffset = tabs.length;
-      return centerOffset + activeIndex;
-    }, [activeIndex, infiniteScroll, tabs.length]);
+    const activeVirtualIndex = infiniteScroll
+      ? tabs.length + activeIndexState
+      : activeIndexState;
 
     // rAF バッチ flush
     const flushLayouts = useCallback(() => {
@@ -267,7 +278,7 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
         scrollEventThrottle={16}
       >
         {virtualTabs.map((tab) => {
-          const isActive = tab.realIndex === activeIndex;
+          const isActive = tab.realIndex === activeIndexState;
           return (
             <TabItem
               key={`${tab.name}-${tab.virtualIndex}`}

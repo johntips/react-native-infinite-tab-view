@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import {
   Dimensions,
@@ -19,6 +20,8 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
+  runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -188,12 +191,23 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       }));
     }, [tabs, infiniteScroll, totalVirtualTabs]);
 
-    // activeIndex に対応する仮想インデックス（中央セット）を取得
-    const activeVirtualIndex = useMemo(() => {
-      if (!infiniteScroll) return activeIndex;
-      const centerOffset = tabs.length;
-      return centerOffset + activeIndex;
-    }, [activeIndex, infiniteScroll, tabs.length]);
+    // activeIndex (SharedValue) に対応する仮想インデックスを算出
+    const tabsLength = tabs.length;
+    const activeIndexJsRef = useRef(0);
+    // JS 側で activeIndex 値を持つためのキャッシュ（rendering に使う）
+    const [activeIndexState, setActiveIndexState] = useState(0);
+    useAnimatedReaction(
+      () => activeIndex.value,
+      (current, prev) => {
+        if (current !== prev) {
+          runOnJS(setActiveIndexState)(current);
+        }
+      },
+    );
+    activeIndexJsRef.current = activeIndexState;
+    const activeVirtualIndex = infiniteScroll
+      ? tabsLength + activeIndexState
+      : activeIndexState;
 
     // rAF バッチ flush: ref のレイアウトデータを SharedValue に一括書き込み
     const flushLayouts = useCallback(() => {
@@ -273,7 +287,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
     layoutFlushCallbackRef.current = updateIndicatorAndCenter;
 
     // activeIndex 変更時: withTiming でインジケーター移動 + センタリング
-    // スワイプ完了後 or タブタップ後に発火。非同期追従設計。
+    // v4: activeIndexState (useAnimatedReaction 経由) で変更検知
     useEffect(() => {
       if (!hasInitialIndicator.current) return;
 
@@ -287,7 +301,6 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
         INDICATOR_TIMING_CONFIG,
       );
 
-      // センタリング
       if (centerActive && scrollEnabled && localScrollRef.current) {
         if (lastCenteredIndex.current !== activeVirtualIndex) {
           lastCenteredIndex.current = activeVirtualIndex;
@@ -314,7 +327,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
 
     const renderTabs = () =>
       virtualTabs.map((tab) => {
-        const isActive = tab.realIndex === activeIndex;
+        const isActive = tab.realIndex === activeIndexState;
         return (
           <MaterialTabItem
             key={`tab-${tab.virtualIndex}`}
