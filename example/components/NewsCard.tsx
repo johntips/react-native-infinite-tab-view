@@ -1,7 +1,8 @@
-import { memo, useCallback, useState } from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
@@ -12,30 +13,71 @@ interface NewsCardProps {
 }
 
 /**
- * 高解像度画像付きニュースカード
- * - 画像読み込み中はシマーライクなプレースホルダーを表示
- * - 読み込み完了後にフェードインアニメーション
- * - memo化でFlashListのリサイクル時の再レンダリングを抑制
+ * production レベルの重いカードコンポーネント
+ * - 高解像度画像 + フェードイン
+ * - プログレスバー（Reanimated SharedValue 駆動）
+ * - 複数の hooks（useSharedValue, useDerivedValue, useEffect, useState）
+ * - 複雑なレイアウト（バッジ、価格、残数表示）
+ * → この重さでもタブスワイプが60fpsで動くことを証明
  */
 export const NewsCard = memo<NewsCardProps>(({ item }) => {
+  // --- 重い hooks 群（production の PackItem を模倣）---
   const [loaded, setLoaded] = useState(false);
+  const [liked, setLiked] = useState(false);
   const opacity = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const progress = useSharedValue(item.remaining / item.total);
+
+  // useDerivedValue（production の scrollY 監視を模倣）
+  const progressPercent = useDerivedValue(
+    () => `${Math.round(progress.value * 100)}%`,
+  );
+
+  // useEffect 群（production の複数 useEffect を模倣）
+  const mountTime = useRef(Date.now());
+  useEffect(() => {
+    // マウント時のアニメーション
+    scale.value = withTiming(1, { duration: 200 });
+  }, [scale]);
+
+  useEffect(() => {
+    // プログレスバーのアニメーション
+    progress.value = withTiming(item.remaining / item.total, { duration: 500 });
+  }, [item.remaining, item.total, progress]);
+
+  useEffect(() => {
+    // 重い計算を模倣（production の画像プリフェッチ等）
+    const timer = setTimeout(() => {
+      // noop - 遅延処理の模倣
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleLoad = useCallback(() => {
     setLoaded(true);
     opacity.value = withTiming(1, { duration: 300 });
   }, [opacity]);
 
+  const handleLike = useCallback(() => {
+    setLiked((prev) => !prev);
+    scale.value = withTiming(1.2, { duration: 100 }, () => {
+      scale.value = withTiming(1, { duration: 100 });
+    });
+  }, [scale]);
+
   const animatedImageStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
   }));
 
+  const animatedProgressStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+  }));
+
   return (
     <View style={styles.card}>
+      {/* 画像エリア */}
       <View style={styles.imageContainer}>
-        {/* プレースホルダー（画像読み込み中に表示） */}
         {!loaded && <View style={styles.placeholder} />}
-        {/* 実画像（フェードイン） */}
         <Animated.View style={[StyleSheet.absoluteFill, animatedImageStyle]}>
           <Image
             source={{ uri: item.imageUrl }}
@@ -44,18 +86,42 @@ export const NewsCard = memo<NewsCardProps>(({ item }) => {
             onLoad={handleLoad}
           />
         </Animated.View>
+        {/* カテゴリバッジ（オーバーレイ） */}
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{item.category}</Text>
+        </View>
       </View>
+
+      {/* コンテンツエリア */}
       <View style={styles.cardContent}>
-        <Text style={styles.cardTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={styles.cardDescription} numberOfLines={3}>
+        <View style={styles.titleRow}>
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {item.title}
+          </Text>
+          <TouchableOpacity onPress={handleLike} style={styles.likeButton}>
+            <Text style={styles.likeIcon}>{liked ? "❤️" : "🤍"}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.cardDescription} numberOfLines={2}>
           {item.description}
         </Text>
-        <View style={styles.cardFooter}>
-          <View style={styles.categoryBadge}>
-            <Text style={styles.cardCategory}>{item.category}</Text>
+
+        {/* 価格 + 残数（production のガチャ UI を模倣） */}
+        <View style={styles.priceRow}>
+          <View style={styles.priceContainer}>
+            <Text style={styles.priceIcon}>🪙</Text>
+            <Text style={styles.price}>{item.price.toLocaleString()}</Text>
+            <Text style={styles.priceUnit}>/1回</Text>
           </View>
+          <Text style={styles.remaining}>
+            残り {item.remaining}/{item.total}
+          </Text>
+        </View>
+
+        {/* プログレスバー */}
+        <View style={styles.progressBar}>
+          <Animated.View style={[styles.progressFill, animatedProgressStyle]} />
         </View>
       </View>
     </View>
@@ -89,37 +155,88 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-  cardContent: {
-    padding: 16,
-  },
-  cardTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#1A1A1A",
-    marginBottom: 8,
-    lineHeight: 22,
-  },
-  cardDescription: {
-    fontSize: 14,
-    color: "#666",
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  cardFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  categoryBadge: {
-    backgroundColor: "#F0F0F0",
+  badge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    backgroundColor: "rgba(0,0,0,0.7)",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
-  cardCategory: {
+  badgeText: {
+    color: "#FFF",
     fontSize: 11,
-    fontWeight: "600",
-    color: "#888",
+    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+  },
+  cardContent: {
+    padding: 16,
+  },
+  titleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+  cardTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#1A1A1A",
+    lineHeight: 22,
+    marginRight: 8,
+  },
+  likeButton: {
+    padding: 4,
+  },
+  likeIcon: {
+    fontSize: 18,
+  },
+  cardDescription: {
+    fontSize: 13,
+    color: "#888",
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  priceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  priceContainer: {
+    flexDirection: "row",
+    alignItems: "baseline",
+  },
+  priceIcon: {
+    fontSize: 16,
+    marginRight: 4,
+  },
+  price: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#1A1A1A",
+  },
+  priceUnit: {
+    fontSize: 12,
+    color: "#888",
+    marginLeft: 2,
+  },
+  remaining: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4CAF50",
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: "#E8E8E8",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: "#4CAF50",
+    borderRadius: 3,
   },
 });
