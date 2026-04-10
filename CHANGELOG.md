@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0] - 2026-04-10
+
+### Performance
+
+- **`onPageScroll` を UI thread worklet で処理**: Reanimated の `useEvent` を使い、PagerView のネイティブイベントを JS thread を経由せず直接受け取る。JS thread がどれだけ busy でも `activeIndex` の更新が遅延しない
+- `pageRealIndexes` を SharedValue 化し、worklet 内から直接参照
+- 型は `PagerViewOnPageScrollEventData` を使った型合成で完全型安全（`any` 不使用）
+
 ## [4.2.0] - 2026-04-10
 
 ### Performance

@@ -23,17 +23,19 @@ Object.defineProperty(window, "matchMedia", {
 
 // react-native-reanimated をモック（Babel plugin なしの web/test 環境用）
 vi.mock("react-native-reanimated", () => {
-  const { View } = require("react-native-web");
+  const { View, ScrollView } = require("react-native-web");
   return {
     __esModule: true,
     default: {
       View,
+      ScrollView,
     },
     useSharedValue: (init: unknown) => ({ value: init }),
     useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
     useAnimatedStyle: (fn: () => object) => fn(),
     useAnimatedReaction: () => {},
     useAnimatedRef: () => ({ current: null }),
+    useEvent: () => () => {},
     scrollTo: () => {},
     runOnJS: (fn: (...args: unknown[]) => void) => fn,
     runOnUI: (fn: (...args: unknown[]) => void) => fn,

@@ -1,4 +1,5 @@
 import type React from "react";
+import type { ComponentProps } from "react";
 import {
   Children,
   isValidElement,
@@ -15,12 +16,16 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import type { PagerViewOnPageSelectedEvent } from "react-native-pager-view";
+import type {
+  PagerViewOnPageScrollEventData,
+  PagerViewOnPageSelectedEvent,
+} from "react-native-pager-view";
 import PagerView from "react-native-pager-view";
 import {
   runOnJS,
   useAnimatedReaction,
   useDerivedValue,
+  useEvent,
   useSharedValue,
 } from "react-native-reanimated";
 import { TabsProvider } from "./Context";
@@ -168,8 +173,34 @@ export const Container: React.FC<TabsContainerProps> = ({
     prevIndex: number;
   } | null>(null);
 
-  // onPageSelected: ページが確定したときに呼ばれる
-  // v4: SharedValue に直接書き込み → React re-render 発生せず UI thread に伝播
+  // pageRealIndexes を SharedValue 化（worklet から参照するため）
+  const pageRealIndexesShared = useSharedValue<number[]>(pageRealIndexesMemo);
+  useEffect(() => {
+    pageRealIndexesShared.value = pageRealIndexesMemo;
+  }, [pageRealIndexesMemo, pageRealIndexesShared]);
+
+  // onPageScroll: PagerView のスクロール進捗を UI thread worklet で受け取る
+  // 利点: JS thread が busy でも activeIndex 更新が遅延しない
+  // useEvent でネイティブイベントを worklet として受け取る
+  const handlePageScrollHandler = useEvent<PagerViewOnPageScrollEventData>(
+    (event) => {
+      "worklet";
+      const position = event.position;
+      const offset = event.offset;
+      // offset が十分に 0 or 1 に近い時 = ページ確定
+      if (offset < 0.01 || offset > 0.99) {
+        const finalPosition = offset > 0.5 ? position + 1 : position;
+        const indexes = pageRealIndexesShared.value;
+        const realIndex = indexes[finalPosition];
+        if (realIndex !== undefined && realIndex !== activeIndex.value) {
+          activeIndex.value = realIndex;
+        }
+      }
+    },
+    ["onPageScroll"],
+  );
+
+  // onPageSelected: React re-render トリガー用（軽量、ページジャンプ判定のみ）
   const handlePageSelected = useCallback(
     (e: PagerViewOnPageSelectedEvent) => {
       if (isJumpingRef.current) return;
@@ -181,7 +212,8 @@ export const Container: React.FC<TabsContainerProps> = ({
       const prevIndex = prevActiveIndexRef.current;
       prevActiveIndexRef.current = realIndex;
 
-      // ✅ SharedValue 書き込み: re-render ゼロ
+      // activeIndex.value は既に handlePageScrollHandler で更新済み
+      // ここでは念のため同期（JS callback 経由だが worklet で先行済み）
       activeIndex.value = realIndex;
 
       if (realIndex !== prevIndex) {
@@ -537,6 +569,11 @@ export const Container: React.FC<TabsContainerProps> = ({
             style={styles.pagerView}
             initialPage={initialPage}
             offscreenPageLimit={offscreenPageLimit}
+            onPageScroll={
+              handlePageScrollHandler as unknown as ComponentProps<
+                typeof PagerView
+              >["onPageScroll"]
+            }
             onPageSelected={handlePageSelected}
             onPageScrollStateChanged={handlePageScrollStateChanged}
           >

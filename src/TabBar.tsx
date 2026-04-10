@@ -9,7 +9,7 @@ import React, {
 import {
   Dimensions,
   type LayoutChangeEvent,
-  ScrollView,
+  type ScrollView,
   type StyleProp,
   StyleSheet,
   Text,
@@ -196,7 +196,7 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
           if (centerActive) {
             const centerX = targetX + targetW / 2;
             const scrollX = Math.max(0, centerX - SCREEN_WIDTH / 2);
-            reanimatedScrollTo(animatedScrollRef, scrollX, 0, true);
+            reanimatedScrollTo(animatedScrollRef, scrollX, 0, false);
           }
         }
 
@@ -300,8 +300,9 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
     }));
 
     return (
-      <ScrollView
-        ref={setRef}
+      <Animated.ScrollView
+        // biome-ignore lint/suspicious/noExplicitAny: Animated.ScrollView の ref 型
+        ref={setRef as any}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -331,7 +332,7 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
             indicatorStyle,
           ]}
         />
-      </ScrollView>
+      </Animated.ScrollView>
     );
   },
 );
