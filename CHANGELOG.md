@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2026-04-10
+
+### Performance
+
+- **インジケーター移動を worklet 内で直接駆動**: `useAnimatedReaction` 内で `withTiming` を実行し、JS thread を経由しない
+- **タブラベル active 色の state 更新を rAF 遅延**: 現在フレームの gesture 処理を優先、次フレームで React re-render を実行
+- タブスワイプ時のインジケーター追従がリスト描画の重さに一切影響されなくなった
+
+### Fixed
+
+- example / 利用側で `WorkletsBabelPluginError` が発生していたのを修正（v4.0.1 より）
+
 ## [4.0.2] - 2026-04-10
 
 ### Fixed
@@ -16,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `useIsNearbyShared` hook を削除（worklet parser が getter 構文を解釈できない問題）
-- example / production で `WorkletsBabelPluginError` が発生していたのを修正
+- 利用側で `WorkletsBabelPluginError` が発生していたのを修正
 
 ## [4.0.0] - 2026-04-10
 

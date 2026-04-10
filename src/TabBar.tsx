@@ -165,12 +165,30 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
     }, [tabs, infiniteScroll]);
 
     // activeIndex (SharedValue) を JS 値にブリッジ（タブ色の描画用）
+    // インジケーター移動は worklet で直接駆動、state 更新は rAF で次フレームに遅延
     const [activeIndexState, setActiveIndexState] = useState(0);
+    const setActiveIndexStateDeferred = useCallback((v: number) => {
+      requestAnimationFrame(() => setActiveIndexState(v));
+    }, []);
+    // インジケーター移動を worklet で直接駆動
+    const tabsLength = tabs.length;
     useAnimatedReaction(
       () => activeIndex.value,
       (current, prev) => {
-        if (current !== prev) {
-          runOnJS(setActiveIndexState)(current);
+        if (current === prev) return;
+
+        const xs = tabLayoutXs.value;
+        const widths = tabLayoutWidths.value;
+        const virtIdx = infiniteScroll ? tabsLength + current : current;
+        const targetX = xs[virtIdx];
+        const targetW = widths[virtIdx];
+        if (targetX !== undefined && targetW !== undefined && targetW > 0) {
+          indicatorX.value = withTiming(targetX, INDICATOR_TIMING_CONFIG);
+          indicatorWidth.value = withTiming(targetW, INDICATOR_TIMING_CONFIG);
+        }
+
+        if (prev !== null) {
+          runOnJS(setActiveIndexStateDeferred)(current);
         }
       },
     );

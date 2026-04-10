@@ -193,18 +193,43 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
 
     // activeIndex (SharedValue) に対応する仮想インデックスを算出
     const tabsLength = tabs.length;
-    const activeIndexJsRef = useRef(0);
-    // JS 側で activeIndex 値を持つためのキャッシュ（rendering に使う）
+    // タブラベルの active 色表示用の遅延 state
+    // インジケーター移動とセンタリングは activeIndex SharedValue から worklet で直接駆動
     const [activeIndexState, setActiveIndexState] = useState(0);
+    const setActiveIndexStateDeferred = useCallback((v: number) => {
+      // 次フレームに遅延（現在フレームの gesture 処理を優先）
+      requestAnimationFrame(() => setActiveIndexState(v));
+    }, []);
+    // インジケーター移動を worklet で直接駆動（JS thread を経由しない）
     useAnimatedReaction(
       () => activeIndex.value,
       (current, prev) => {
-        if (current !== prev) {
-          runOnJS(setActiveIndexState)(current);
+        if (current === prev) return;
+
+        // インジケーター位置を UI thread で即時更新
+        const xs = tabLayoutXs.value;
+        const widths = tabLayoutWidths.value;
+        const virtIdx = infiniteScroll ? tabsLength + current : current;
+        const targetX = xs[virtIdx];
+        const targetW = widths[virtIdx];
+        if (targetX !== undefined && targetW !== undefined && targetW > 0) {
+          const inset = targetW * 0.1;
+          indicatorX.value = withTiming(
+            targetX + inset,
+            INDICATOR_TIMING_CONFIG,
+          );
+          indicatorWidth.value = withTiming(
+            targetW - inset * 2,
+            INDICATOR_TIMING_CONFIG,
+          );
+        }
+
+        // タブラベル色は次フレーム遅延で更新（gesture 優先）
+        if (prev !== null) {
+          runOnJS(setActiveIndexStateDeferred)(current);
         }
       },
     );
-    activeIndexJsRef.current = activeIndexState;
     const activeVirtualIndex = infiniteScroll
       ? tabsLength + activeIndexState
       : activeIndexState;

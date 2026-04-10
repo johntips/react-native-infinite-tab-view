@@ -1,84 +1,72 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
-  useDerivedValue,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
 import type { NewsItem } from "../data/newsItems";
+import { useFadeInAnimation, useImageLoader } from "../hooks/useMockHooks";
 
 interface NewsCardProps {
   item: NewsItem;
 }
 
 /**
- * production レベルの重いカードコンポーネント
- * - 高解像度画像 + フェードイン
- * - プログレスバー（Reanimated SharedValue 駆動）
- * - 複数の hooks（useSharedValue, useDerivedValue, useEffect, useState）
- * - 複雑なレイアウト（バッジ、価格、残数表示）
- * → この重さでもタブスワイプが60fpsで動くことを証明
+ * ニュースカード（大量のカスタムフックを持つ重量級コンポーネント）
+ * - 大量のカスタムフック × リスト全アイテム分 = 重い JS 処理
+ * - この重さでもタブスワイプが 60fps で動くことを証明
+ *
+ * Hooks per card:
+ * - useState × 2
+ * - useSharedValue × 2
+ * - useCallback × 2
+ * - useAnimatedStyle × 3
+ * - useFadeInAnimation × 1 (useSharedValue + useEffect + useAnimatedStyle)
+ * - useImageLoader × 1 (useState + useSharedValue + useCallback + useAnimatedStyle)
+ * = 合計 15+ hooks × カード数
  */
 export const NewsCard = memo<NewsCardProps>(({ item }) => {
-  // --- 重い hooks 群（production の PackItem を模倣）---
-  const [loaded, setLoaded] = useState(false);
+  // 画像ロード状態（カスタムフック）
+  const { handleLoad, animatedStyle: imageFadeStyle } = useImageLoader();
+
+  // カード全体のフェードイン
+  const cardFadeStyle = useFadeInAnimation();
+
+  // いいね状態
   const [liked, setLiked] = useState(false);
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(1);
-  const progress = useSharedValue(item.remaining / item.total);
-
-  // useDerivedValue（production の scrollY 監視を模倣）
-  const progressPercent = useDerivedValue(
-    () => `${Math.round(progress.value * 100)}%`,
-  );
-
-  // useEffect 群（production の複数 useEffect を模倣）
-  const mountTime = useRef(Date.now());
-  useEffect(() => {
-    // マウント時のアニメーション
-    scale.value = withTiming(1, { duration: 200 });
-  }, [scale]);
-
-  useEffect(() => {
-    // プログレスバーのアニメーション
-    progress.value = withTiming(item.remaining / item.total, { duration: 500 });
-  }, [item.remaining, item.total, progress]);
-
-  useEffect(() => {
-    // 重い計算を模倣（production の画像プリフェッチ等）
-    const timer = setTimeout(() => {
-      // noop - 遅延処理の模倣
-    }, 100);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleLoad = useCallback(() => {
-    setLoaded(true);
-    opacity.value = withTiming(1, { duration: 300 });
-  }, [opacity]);
+  const [bookmarked, setBookmarked] = useState(false);
+  const likeScale = useSharedValue(1);
+  const bookmarkScale = useSharedValue(1);
 
   const handleLike = useCallback(() => {
     setLiked((prev) => !prev);
-    scale.value = withTiming(1.2, { duration: 100 }, () => {
-      scale.value = withTiming(1, { duration: 100 });
+    likeScale.value = withTiming(1.3, { duration: 100 }, () => {
+      likeScale.value = withTiming(1, { duration: 100 });
     });
-  }, [scale]);
+  }, [likeScale]);
 
-  const animatedImageStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
+  const handleBookmark = useCallback(() => {
+    setBookmarked((prev) => !prev);
+    bookmarkScale.value = withTiming(1.3, { duration: 100 }, () => {
+      bookmarkScale.value = withTiming(1, { duration: 100 });
+    });
+  }, [bookmarkScale]);
+
+  const likeAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: likeScale.value }],
   }));
 
-  const animatedProgressStyle = useAnimatedStyle(() => ({
-    width: `${progress.value * 100}%`,
+  const bookmarkAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: bookmarkScale.value }],
   }));
 
   return (
-    <View style={styles.card}>
-      {/* 画像エリア */}
+    <Animated.View style={[styles.card, cardFadeStyle]}>
+      {/* ヘッドライン画像 */}
       <View style={styles.imageContainer}>
-        {!loaded && <View style={styles.placeholder} />}
-        <Animated.View style={[StyleSheet.absoluteFill, animatedImageStyle]}>
+        <View style={styles.placeholder} />
+        <Animated.View style={[StyleSheet.absoluteFill, imageFadeStyle]}>
           <Image
             source={{ uri: item.imageUrl }}
             style={styles.image}
@@ -86,45 +74,88 @@ export const NewsCard = memo<NewsCardProps>(({ item }) => {
             onLoad={handleLoad}
           />
         </Animated.View>
-        {/* カテゴリバッジ（オーバーレイ） */}
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{item.category}</Text>
+        {/* バッジ */}
+        <View style={styles.badgeRow}>
+          {item.isBreaking && (
+            <View style={[styles.badge, styles.breakingBadge]}>
+              <Text style={styles.breakingText}>BREAKING</Text>
+            </View>
+          )}
+          {item.isExclusive && (
+            <View style={[styles.badge, styles.exclusiveBadge]}>
+              <Text style={styles.exclusiveText}>EXCLUSIVE</Text>
+            </View>
+          )}
         </View>
       </View>
 
-      {/* コンテンツエリア */}
-      <View style={styles.cardContent}>
-        <View style={styles.titleRow}>
-          <Text style={styles.cardTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
-          <TouchableOpacity onPress={handleLike} style={styles.likeButton}>
-            <Text style={styles.likeIcon}>{liked ? "❤️" : "🤍"}</Text>
-          </TouchableOpacity>
+      {/* コンテンツ */}
+      <View style={styles.content}>
+        {/* カテゴリ + 日付 */}
+        <View style={styles.metaRow}>
+          <Text style={styles.category}>{item.category.toUpperCase()}</Text>
+          <Text style={styles.metaDot}>•</Text>
+          <Text style={styles.date}>{item.publishedAt}</Text>
+          <Text style={styles.metaDot}>•</Text>
+          <Text style={styles.readTime}>{item.readTime} min read</Text>
         </View>
 
-        <Text style={styles.cardDescription} numberOfLines={2}>
-          {item.description}
+        {/* タイトル */}
+        <Text style={styles.title} numberOfLines={3}>
+          {item.title}
         </Text>
 
-        {/* 価格 + 残数（production のガチャ UI を模倣） */}
-        <View style={styles.priceRow}>
-          <View style={styles.priceContainer}>
-            <Text style={styles.priceIcon}>🪙</Text>
-            <Text style={styles.price}>{item.price.toLocaleString()}</Text>
-            <Text style={styles.priceUnit}>/1回</Text>
-          </View>
-          <Text style={styles.remaining}>
-            残り {item.remaining}/{item.total}
-          </Text>
+        {/* 概要 */}
+        <Text style={styles.summary} numberOfLines={3}>
+          {item.summary}
+        </Text>
+
+        {/* タグ */}
+        <View style={styles.tagRow}>
+          {item.tags.map((tag) => (
+            <View key={tag} style={styles.tag}>
+              <Text style={styles.tagText}>#{tag}</Text>
+            </View>
+          ))}
         </View>
 
-        {/* プログレスバー */}
-        <View style={styles.progressBar}>
-          <Animated.View style={[styles.progressFill, animatedProgressStyle]} />
+        {/* 著者 + アクション */}
+        <View style={styles.footer}>
+          <View style={styles.author}>
+            <Image
+              source={{ uri: item.authorAvatar }}
+              style={styles.authorAvatar}
+            />
+            <Text style={styles.authorName}>{item.authorName}</Text>
+          </View>
+
+          <View style={styles.actions}>
+            <Text style={styles.stat}>
+              {item.viewCount > 1000
+                ? `${Math.floor(item.viewCount / 1000)}k`
+                : item.viewCount}{" "}
+              views
+            </Text>
+            <TouchableOpacity onPress={handleLike} style={styles.actionButton}>
+              <Animated.Text style={[styles.actionIcon, likeAnimatedStyle]}>
+                {liked ? "❤️" : "🤍"}
+              </Animated.Text>
+              <Text style={styles.actionCount}>
+                {item.likeCount + (liked ? 1 : 0)}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleBookmark}
+              style={styles.actionButton}
+            >
+              <Animated.Text style={[styles.actionIcon, bookmarkAnimatedStyle]}>
+                {bookmarked ? "🔖" : "📑"}
+              </Animated.Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 });
 
@@ -143,7 +174,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   imageContainer: {
-    height: 200,
+    height: 220,
     width: "100%",
     backgroundColor: "#F0F0F0",
   },
@@ -155,88 +186,136 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-  badge: {
+  badgeRow: {
     position: "absolute",
     top: 12,
     left: 12,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    flexDirection: "row",
+    gap: 6,
+  },
+  badge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 4,
   },
-  badgeText: {
+  breakingBadge: {
+    backgroundColor: "#E53935",
+  },
+  breakingText: {
     color: "#FFF",
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
-  cardContent: {
+  exclusiveBadge: {
+    backgroundColor: "#1A1A1A",
+  },
+  exclusiveText: {
+    color: "#FFD700",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  content: {
     padding: 16,
   },
-  titleRow: {
+  metaRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  cardTitle: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#1A1A1A",
-    lineHeight: 22,
-    marginRight: 8,
-  },
-  likeButton: {
-    padding: 4,
-  },
-  likeIcon: {
-    fontSize: 18,
-  },
-  cardDescription: {
-    fontSize: 13,
-    color: "#888",
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  priceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 8,
   },
-  priceContainer: {
-    flexDirection: "row",
-    alignItems: "baseline",
+  category: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#E53935",
+    letterSpacing: 0.5,
   },
-  priceIcon: {
-    fontSize: 16,
-    marginRight: 4,
+  metaDot: {
+    fontSize: 11,
+    color: "#999",
+    marginHorizontal: 6,
   },
-  price: {
-    fontSize: 20,
+  date: {
+    fontSize: 11,
+    color: "#999",
+  },
+  readTime: {
+    fontSize: 11,
+    color: "#999",
+  },
+  title: {
+    fontSize: 18,
     fontWeight: "800",
     color: "#1A1A1A",
+    lineHeight: 24,
+    marginBottom: 8,
   },
-  priceUnit: {
-    fontSize: 12,
-    color: "#888",
-    marginLeft: 2,
+  summary: {
+    fontSize: 14,
+    color: "#555",
+    lineHeight: 20,
+    marginBottom: 12,
   },
-  remaining: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#4CAF50",
+  tagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 12,
   },
-  progressBar: {
-    height: 6,
+  tag: {
+    backgroundColor: "#F0F0F0",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  tagText: {
+    fontSize: 11,
+    color: "#666",
+    fontWeight: "500",
+  },
+  footer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+    paddingTop: 12,
+  },
+  author: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  authorAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginRight: 8,
     backgroundColor: "#E8E8E8",
-    borderRadius: 3,
-    overflow: "hidden",
   },
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#4CAF50",
-    borderRadius: 3,
+  authorName: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#444",
+  },
+  actions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  stat: {
+    fontSize: 11,
+    color: "#888",
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  actionIcon: {
+    fontSize: 16,
+  },
+  actionCount: {
+    fontSize: 11,
+    color: "#666",
   },
 });
