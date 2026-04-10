@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.4.0] - 2026-04-11
+
+### 🎯 Performance — Critical lazy mount fix
+
+**infinite scroll + lazy mode で 1 タブあたり 10 個の HeavyContent が並列マウントされていた深刻な bug を修正。**
+
+- **問題**: `Container` の `mountedIndexes` が **realIndex** をキーにしていたため、infinite scroll の `BUFFER_MULTIPLIER=10` で同じ realIndex を持つ 10 個の virtual page がすべて children を render していた。consumer が渡した heavy な children (FlashList, 大量の hooks, データ fetch など) が 10 インスタンス同時に mount され、JS thread を完全に詰まらせていた。
+- **修正**: `mountedIndexes` → `mountedPagerIndexes` に変更。**pagerIndex (virtual page index) をキーにして追跡**することで、user が実際に到達した virtual page の children だけが render されるように。`handlePageSelected` / `handleTabPress` から `addMountedPagerRange(pagerIndex)` で新規 pagerIndex を mount 集合に追加する。
+
+### 実測 before / after (iPhone 16e 実機、20 タブ、Maestro 10 swipe)
+
+| 指標 | v4.3.3 baseline | v4.4.0 | 改善率 |
+|------|-----------------|--------|--------|
+| **JS dispatch latency** | 400-750ms 🔴 | **13-28ms** 🟢 | **~25x** |
+| **Mount cost per tab** | ~500ms × **10 件** (= ~5000ms) | **~50ms × 1 件** | **~100x** |
+| **Worklet→JS hop** | 1000-1700ms burst | **0ms** (定常時) | **∞** |
+| **Total (swipe→content)** | 3000-17000ms | **600-900ms** | **~5-20x** |
+| 🔴 BLOCKED 件数 | 全件 | **0 件** | — |
+| 🟢 FAST 件数 | 0 件 | **ほぼ全件** | — |
+
+### Performance — Centralized tab subscription (API 整理)
+
+各タブ consumer の `useAnimatedReaction(activeIndex)` を Container 側の単一 reaction に集約。
+
+- worklet 評価回数: N → 1 per swipe
+- `runOnJS` 往復: 最大 2N → 最大 2 per swipe (前アクティブ + 新アクティブのみ)
+- 注: 上記 lazy mount fix が入るまで実測値には現れなかったが、同じ bug を抱える consumer の記述を簡潔にする API 整理としての価値がある
+
+### Added
+
+- 新規フック **`useIsTabActive(tabName)`**: アクティブ状態を React state として受け取る。各タブで `useAnimatedReaction` + `runOnJS(setState)` を書く代わりにこれを使うと、自動的に centralized subscription 経由で動く
+- **`TabsContextValue.subscriptions: TabSubscriptionAPI`** — Container が提供する subscription registry
+  - `subscribeToActive(tabIndex, cb)` / `subscribeToNearby(tabIndex, cb)`: callback 登録 (unsubscribe 関数を返す)
+  - `getInitialActive(tabIndex)` / `getInitialNearby(tabIndex)`: 初期値取得
+  - callback は `(value: boolean, workletTime?: number) => void` シグネチャ。`workletTime` は hop latency 計測向けオプショナル引数
+- `TabBoolSubscriber` 型を公開
+- `useIsNearby` の内部実装を centralized subscription 経由に変更 (API 互換)
+
+### Migration
+
+- **完全後方互換**。既存 API (`useActiveTabIndex`, `useIsNearby` など) は変更なし。
+- 特に `lazy={true}` の consumer は **何もしなくても自動的に** 10x mount bug fix の恩恵を受ける。
+- 新コードでは `useIsTabActive(tabName)` を使うことで、各タブ側の boilerplate (`useAnimatedReaction` + `runOnJS(setState)`) を省略できる。
+
+### Example
+
+- NewsList から自前の `useAnimatedReaction(activeIndex)` を削除し、`ctx.subscriptions.subscribeToActive` を直接購読する形に変更 (hop latency 計測のため)
+- perfLogger に `markActivation(category, workletTime?)` / `markReady` / `markUnmount` / `markMountCost` を追加。anchor を `markTabSwitch` (onTabChange は idle 遅延されるため不適) から `activation` に変更
+- `example/PERF_METRICS.md` に指標の確定仕様を記載
+- `example/.maestro/flows/swipe-perf.yml` に自動 perf 計測 flow を追加
+
 ## [4.3.3] - 2026-04-10
 
 ### Fixed

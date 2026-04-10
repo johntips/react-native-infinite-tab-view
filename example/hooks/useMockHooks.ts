@@ -62,6 +62,10 @@ export function useMockEventCenter() {
 /**
  * データ取得フック（模擬 API fetch、300ms 遅延）
  * 実アプリの useQuery に相当。
+ *
+ * 🔴 重要: unmount 時・依存変更時に setTimeout を必ず cancel する。
+ * cancel を忘れると、タブを次々スワイプした時に前タブの fetch が JS thread を
+ * 占有し続け、JS latency が累積的に悪化する。
  */
 export function useMockQuery<T>(
   key: string,
@@ -70,26 +74,31 @@ export function useMockQuery<T>(
 ): { data: T | undefined; isPending: boolean; refetch: () => void } {
   const [data, setData] = useState<T | undefined>(undefined);
   const [isPending, setIsPending] = useState(true);
+  const [reloadTick, setReloadTick] = useState(0);
   const enabled = options?.enabled ?? true;
   const delayMs = options?.delayMs ?? 300;
-
-  const refetch = useCallback(() => {
-    if (!enabled) return;
-    setIsPending(true);
-    const timer = setTimeout(() => {
-      setData(fetcher());
-      setIsPending(false);
-    }, delayMs);
-    return () => clearTimeout(timer);
-  }, [enabled, fetcher, delayMs]);
 
   useEffect(() => {
     if (!enabled) {
       setIsPending(false);
       return;
     }
-    refetch();
-  }, [enabled, refetch]);
+    setIsPending(true);
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      setData(fetcher());
+      setIsPending(false);
+    }, delayMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [enabled, fetcher, delayMs, reloadTick]);
+
+  const refetch = useCallback(() => {
+    setReloadTick((n) => n + 1);
+  }, []);
 
   return { data, isPending, refetch };
 }

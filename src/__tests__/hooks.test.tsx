@@ -52,10 +52,12 @@ describe("useIsNearby", () => {
     expect(result).toBe(true);
   });
 
-  // mock 環境では useAnimatedReaction が発火しないため、初期値 (tabIndex === 0) のみで判定される
-  // 実機では useAnimatedReaction により隣接タブも true になる
-  it("隣接タブは mock 環境では初期値 false（実機では useAnimatedReaction で true）", () => {
-    let result = true;
+  // v4.4.0: getInitialNearby は SharedValue<nearbyIndexes> を直読みするため、
+  // mock 環境でも offscreenPageLimit=1 の初期値 [0, 1] を反映して隣接タブは true を返す。
+  // 旧実装では useAnimatedReaction の初回発火に依存していたため mock 環境で false だったが、
+  // centralized subscription + 直読みで "実機と同じ挙動" が初回レンダリングから得られる。
+  it("隣接タブ (offscreenPageLimit=1) は初期値 true を返す", () => {
+    let result = false;
 
     render(
       <Container infiniteScroll={false} offscreenPageLimit={1}>
@@ -76,8 +78,8 @@ describe("useIsNearby", () => {
       </Container>,
     );
 
-    // 初期値は tabIndex === 0 のみ true（tab2 は index=1 なので false）
-    expect(result).toBe(false);
+    // tab2 は activeIndex=0 に対して offscreenPageLimit=1 内なので nearby = true
+    expect(result).toBe(true);
   });
 
   it("遠いタブに対して false を返す", () => {

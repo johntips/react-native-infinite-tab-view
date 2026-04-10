@@ -381,11 +381,30 @@ interface TabChangeEvent {
 | Hook | Returns | Description |
 |------|---------|-------------|
 | `useCurrentTabScrollY()` | `SharedValue<number>` | Current tab's scroll Y position |
-| `useActiveTabIndex()` | `number` | Currently active tab index |
+| `useActiveTabIndex()` | `SharedValue<number>` | Active tab index as a SharedValue (no re-render) |
+| `useActiveTabIndexValue()` | `number` | Active tab index as a plain number (triggers re-render) |
+| `useIsTabActive(tabName)` | `boolean` | **v4.4.0+**. Is this tab currently active? Uses centralized subscription — no per-instance `useAnimatedReaction` needed |
+| `useIsNearby(tabName)` | `boolean` | Is this tab active or adjacent? Useful for prefetching |
+| `useNearbyIndexes()` | `SharedValue<number[]>` | Array of active + adjacent tab indexes |
 | `useTabs()` | `Tab[]` | Array of tab info |
-| `useIsNearby(tabName)` | `boolean` | Whether the tab is active or adjacent (for prefetching) |
-| `useNearbyIndexes()` | `number[]` | Array of active + adjacent tab indexes |
-| `useTabsContext()` | `TabsContextValue` | Full context value |
+| `useTabsContext()` | `TabsContextValue` | Full context value (advanced) |
+
+#### Why `useIsTabActive` instead of watching `activeIndex` yourself?
+
+Before v4.4.0, each tab that wanted to know "am I active right now?" had to do something like:
+
+```tsx
+const activeIndex = useActiveTabIndex();
+const [isActive, setIsActive] = useState(false);
+useAnimatedReaction(
+  () => activeIndex.value === tabIndex,
+  (current, prev) => {
+    if (current !== prev) runOnJS(setIsActive)(current);
+  },
+);
+```
+
+With 20 tabs, this creates 20 worklet reactions + up to 40 `runOnJS` calls per swipe. `useIsTabActive` centralizes the subscription in `Container` so only **one** reaction runs for the whole tab view, and only the 2 affected tabs (previous + next active) receive `setState` calls.
 
 ## Migration from react-native-collapsible-tab-view
 

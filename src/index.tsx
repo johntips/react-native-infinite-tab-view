@@ -19,6 +19,7 @@ export {
   useActiveTabIndexValue,
   useCurrentTabScrollY,
   useIsNearby,
+  useIsTabActive,
   useNearbyIndexes,
   useTabs,
 } from "./hooks";

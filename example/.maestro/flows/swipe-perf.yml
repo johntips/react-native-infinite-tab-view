@@ -1,0 +1,39 @@
+# Maestro flow: perf measurement swipe loop
+#
+# Purpose:
+#   Autonomously swipe through tabs in the example app to trigger the
+#   perfLogger instrumentation. Intended to be run after every library
+#   change to get a reproducible before/after comparison.
+#
+# Preconditions:
+#   - iPhone simulator booted
+#   - Metro running on :8081 with example app bundled
+#   - App already launched and on the first tab (business/politics/etc)
+#
+# Run:
+#   ~/.maestro/bin/maestro test example/.maestro/flows/swipe-perf.yml \
+#     --device <udid-of-booted-sim>
+#
+# Expected output: Metro console will emit [PERF] lines showing dispatch/hop/
+#   idle/data/paint/total for each swipe. Capture with metro-logs-since.sh.
+
+appId: host.exp.Exponent
+---
+# 現在の画面状態を確認 (Expo Go/Dev Client)
+- takeScreenshot: /tmp/maestro-before.png
+
+# 連続 10 回の水平スワイプ
+# Expo のタブバーは上部に出るので、タブバー以外の中央エリアでスワイプする
+- repeat:
+    times: 10
+    commands:
+      - swipe:
+          start: 80%, 50%
+          end: 20%, 50%
+          duration: 300
+      # 次のスワイプまで少し待つ (InteractionManager と perf 計測のため)
+      - waitForAnimationToEnd:
+          timeout: 1500
+
+# 最終状態をキャプチャ
+- takeScreenshot: /tmp/maestro-after.png

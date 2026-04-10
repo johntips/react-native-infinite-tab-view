@@ -26,7 +26,12 @@ import {
 import { TabsProvider } from "./Context";
 import { SCREEN_WIDTH, TAB_BAR_HEIGHT } from "./constants";
 import { DefaultTabBar } from "./TabBar";
-import type { DebugLogEvent, TabsContainerProps } from "./types";
+import type {
+  DebugLogEvent,
+  TabBoolSubscriber,
+  TabSubscriptionAPI,
+  TabsContainerProps,
+} from "./types";
 
 interface VirtualPage {
   /** 実タブのインデックス (0..tabs.length-1) */
@@ -159,6 +164,65 @@ export const Container: React.FC<TabsContainerProps> = ({
 
   // タブ中央配置は TabBar コンポーネント側で計測済みレイアウトを使って処理
 
+  // --- Lazy mount state (pagerIndex ベース) ---
+  // v4.4.1 FIX: infinite scroll の BUFFER_MULTIPLIER=10 によって同じ realIndex を
+  // 持つ 10 個の virtual page が存在するため、realIndex ベースの mount tracking では
+  // consumer が 10x mount を強いられていた。pagerIndex をキーにすることで、user が
+  // 実際に到達した virtual page だけが children を render される。
+  //
+  // 初期値: 初期ページ (centerPage or 0) の ± offscreenPageLimit 範囲。
+  const initialPagerIndex = infiniteScroll && tabs.length > 1 ? centerPage : 0;
+
+  const initialMountedPagerIndexes = useMemo(() => {
+    const indexes = new Set<number>();
+    for (let i = -offscreenPageLimit; i <= offscreenPageLimit; i++) {
+      const pagerIdx = initialPagerIndex + i;
+      if (pagerIdx >= 0 && pagerIdx < pages.length) {
+        indexes.add(pagerIdx);
+      }
+    }
+    return indexes;
+  }, [offscreenPageLimit, initialPagerIndex, pages.length]);
+
+  const [mountedPagerIndexes, setMountedPagerIndexes] = useState<Set<number>>(
+    initialMountedPagerIndexes,
+  );
+
+  // pagerIndex とその ± offscreenPageLimit 近傍を mountedPagerIndexes に追加
+  const addMountedPagerRange = useCallback(
+    (centerPagerIndex: number) => {
+      setMountedPagerIndexes((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (let i = -offscreenPageLimit; i <= offscreenPageLimit; i++) {
+          const pagerIdx = centerPagerIndex + i;
+          if (pagerIdx >= 0 && pagerIdx < pages.length && !next.has(pagerIdx)) {
+            next.add(pagerIdx);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    },
+    [offscreenPageLimit, pages.length],
+  );
+
+  // 初期マウント時に initialMountedPagerIndexes を反映 (pages.length が後から確定するケース対応)
+  useEffect(() => {
+    if (!lazy) return;
+    setMountedPagerIndexes((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const idx of initialMountedPagerIndexes) {
+        if (!next.has(idx)) {
+          next.add(idx);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [lazy, initialMountedPagerIndexes]);
+
   // --- PagerView イベントハンドラ ---
 
   // 1-C: onTabChange を idle まで遅延（Haptics / Zustand setState 等のアプリ側処理を
@@ -188,6 +252,12 @@ export const Container: React.FC<TabsContainerProps> = ({
         pendingTabChangeRef.current = { newIndex: realIndex, prevIndex };
       }
 
+      // v4.4.1: lazy mode で pagerIndex 基準の mountedPagerIndexes を更新。
+      // これにより user が到達した virtual page だけ children が render される。
+      if (lazy) {
+        addMountedPagerRange(position);
+      }
+
       // 巻き戻し保険: 端に近づいたら中央に戻す
       if (infiniteScroll && tabs.length > 1) {
         const edgeThreshold = tabs.length * 5;
@@ -206,6 +276,8 @@ export const Container: React.FC<TabsContainerProps> = ({
       tabs.length,
       pages.length,
       centerPage,
+      lazy,
+      addMountedPagerRange,
     ],
   );
 
@@ -292,12 +364,15 @@ export const Container: React.FC<TabsContainerProps> = ({
       activeIndex.value = normalized;
       triggerTabChange(normalized, prevIndex);
 
-      // PagerView のページ切替
-      if (infiniteScroll && tabs.length > 1) {
-        pagerRef.current?.setPage(centerPage + normalized);
-      } else {
-        pagerRef.current?.setPage(normalized);
+      // PagerView のページ切替 + lazy mount の pagerIndex を同期
+      const targetPagerIndex =
+        infiniteScroll && tabs.length > 1
+          ? centerPage + normalized
+          : normalized;
+      if (lazy) {
+        addMountedPagerRange(targetPagerIndex);
       }
+      pagerRef.current?.setPage(targetPagerIndex);
     },
     [
       normalizeIndex,
@@ -307,6 +382,8 @@ export const Container: React.FC<TabsContainerProps> = ({
       infiniteScroll,
       tabs.length,
       centerPage,
+      lazy,
+      addMountedPagerRange,
     ],
   );
 
@@ -393,6 +470,153 @@ export const Container: React.FC<TabsContainerProps> = ({
     },
   );
 
+  // ========================================================================
+  // v4.4.0: Centralized Tab Subscription
+  //
+  // 従来は N 個のタブ consumer が各自 useAnimatedReaction(activeIndex) を
+  // 実行していた (N 個 worklet reaction + N 個 runOnJS 往復)。
+  // 本改善ではそれを Container 側の 1 個の reaction に集約する。
+  //
+  // 効果 (計測済みベースライン: dispatch 400-750ms):
+  //   - worklet 評価: N → 1 per swipe
+  //   - runOnJS 往復: 最大 2N → 最大 2 per swipe (前アクティブ + 新アクティブ)
+  //   - React commit phase: N setState batch → 2 setState batch
+  //   - 期待値: dispatch 400-750ms → 30-100ms
+  // ========================================================================
+
+  // Subscriber registry: tabIndex -> Set<callback>
+  // ref で保持し、subscribe/unsubscribe で mutate しても Container 自身は re-render しない
+  const activeSubscribersRef = useRef<Map<number, Set<TabBoolSubscriber>>>(
+    new Map(),
+  );
+  const nearbySubscribersRef = useRef<Map<number, Set<TabBoolSubscriber>>>(
+    new Map(),
+  );
+
+  // 現在の active/nearby 状態 (初期値取得用、ref で保持)
+  const currentActiveIndexRef = useRef(0);
+  const currentNearbyIndexesRef = useRef<Set<number>>(new Set([0]));
+
+  // JS thread で呼ばれる通知関数
+  // workletTime は worklet 側で取った performance.now() 値 (hop 計測用、省略可)
+  const notifyActiveChange = useCallback(
+    (prev: number, current: number, workletTime?: number) => {
+      currentActiveIndexRef.current = current;
+      // prev を false に
+      if (prev !== current && prev >= 0) {
+        const set = activeSubscribersRef.current.get(prev);
+        if (set) {
+          for (const cb of set) cb(false, workletTime);
+        }
+      }
+      // current を true に
+      if (current >= 0) {
+        const set = activeSubscribersRef.current.get(current);
+        if (set) {
+          for (const cb of set) cb(true, workletTime);
+        }
+      }
+    },
+    [],
+  );
+
+  const notifyNearbyChange = useCallback(
+    (added: number[], removed: number[], currentSet: number[]) => {
+      currentNearbyIndexesRef.current = new Set(currentSet);
+      for (const idx of added) {
+        const set = nearbySubscribersRef.current.get(idx);
+        if (set) {
+          for (const cb of set) cb(true);
+        }
+      }
+      for (const idx of removed) {
+        const set = nearbySubscribersRef.current.get(idx);
+        if (set) {
+          for (const cb of set) cb(false);
+        }
+      }
+    },
+    [],
+  );
+
+  // ★ Centralized reaction: activeIndex 単独 (前後 index を渡す)
+  useAnimatedReaction(
+    () => activeIndex.value,
+    (current, prev) => {
+      if (prev === null || prev === undefined || current === prev) return;
+      // worklet 側で時刻を取って hop latency 計測に使う (performance.now() は
+      // Reanimated 3+ の worklet context でも JS と同一時刻系で取得できる)
+      // biome-ignore lint/suspicious/noExplicitAny: performance is a global in worklet context
+      const workletTime = (globalThis as any).performance?.now?.() as
+        | number
+        | undefined;
+      runOnJS(notifyActiveChange)(prev, current, workletTime);
+    },
+    [notifyActiveChange],
+  );
+
+  // ★ Centralized reaction: nearbyIndexes の変化を subscribers に伝える
+  useAnimatedReaction(
+    () => nearbyIndexes.value,
+    (current, prev) => {
+      if (!prev) return;
+      // 差分計算を worklet 内で (JS thread にデータを渡す量を減らす)
+      const added: number[] = [];
+      const removed: number[] = [];
+      for (const idx of current) {
+        if (!prev.includes(idx)) added.push(idx);
+      }
+      for (const idx of prev) {
+        if (!current.includes(idx)) removed.push(idx);
+      }
+      if (added.length === 0 && removed.length === 0) return;
+      runOnJS(notifyNearbyChange)(added, removed, current);
+    },
+    [notifyNearbyChange],
+  );
+
+  // Subscribe API (Context 経由で consumer に提供)
+  const subscriptionsAPI = useMemo<TabSubscriptionAPI>(
+    () => ({
+      subscribeToActive: (tabIndex, cb) => {
+        let set = activeSubscribersRef.current.get(tabIndex);
+        if (!set) {
+          set = new Set();
+          activeSubscribersRef.current.set(tabIndex, set);
+        }
+        set.add(cb);
+        return () => {
+          const s = activeSubscribersRef.current.get(tabIndex);
+          if (s) {
+            s.delete(cb);
+            if (s.size === 0) activeSubscribersRef.current.delete(tabIndex);
+          }
+        };
+      },
+      subscribeToNearby: (tabIndex, cb) => {
+        let set = nearbySubscribersRef.current.get(tabIndex);
+        if (!set) {
+          set = new Set();
+          nearbySubscribersRef.current.set(tabIndex, set);
+        }
+        set.add(cb);
+        return () => {
+          const s = nearbySubscribersRef.current.get(tabIndex);
+          if (s) {
+            s.delete(cb);
+            if (s.size === 0) nearbySubscribersRef.current.delete(tabIndex);
+          }
+        };
+      },
+      // SharedValue を直接読むことで、再マウント時でも最新値を正しく取得できる。
+      // (currentActiveIndexRef は notifyActiveChange が発火した後しか更新されないため
+      // 初回 mount のタイミングによっては古い値を返してしまう可能性がある)
+      getInitialActive: (tabIndex) => activeIndex.value === tabIndex,
+      getInitialNearby: (tabIndex) => nearbyIndexes.value.includes(tabIndex),
+    }),
+    [],
+  );
+
   // 初回マウント時にデバッグログを発火（useAnimatedReaction の初回発火が環境依存のため）
   useEffect(() => {
     if (!debug) return;
@@ -412,6 +636,7 @@ export const Container: React.FC<TabsContainerProps> = ({
       tabBarCenterActive,
       updateScrollY,
       tabNames,
+      subscriptions: subscriptionsAPI,
     }),
     [
       activeIndex,
@@ -423,48 +648,8 @@ export const Container: React.FC<TabsContainerProps> = ({
       tabBarCenterActive,
       updateScrollY,
       tabNames,
+      subscriptionsAPI,
     ],
-  );
-
-  // Lazy mount: 一度 nearby になった realIndex を追跡（アンマウントしない）
-  // 初期値は activeIndex=0 の nearby（0 ± offscreenPageLimit）
-  const initialNearby = useMemo(() => {
-    const indexes = new Set<number>();
-    for (let i = -offscreenPageLimit; i <= offscreenPageLimit; i++) {
-      const normalized = infiniteScroll
-        ? ((i % tabsLength) + tabsLength) % tabsLength
-        : i;
-      if (normalized >= 0 && normalized < tabsLength) {
-        indexes.add(normalized);
-      }
-    }
-    return indexes;
-  }, [offscreenPageLimit, tabsLength, infiniteScroll]);
-
-  const [mountedIndexes, setMountedIndexes] =
-    useState<Set<number>>(initialNearby);
-
-  const addMountedIndexes = useCallback((nearby: number[]) => {
-    setMountedIndexes((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const idx of nearby) {
-        if (!next.has(idx)) {
-          next.add(idx);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, []);
-
-  useAnimatedReaction(
-    () => nearbyIndexes.value,
-    (nearby) => {
-      if (!lazy) return;
-      runOnJS(addMountedIndexes)(nearby);
-    },
-    [lazy],
   );
 
   // コンテンツビュー（PagerView の children として生成）
@@ -474,8 +659,9 @@ export const Container: React.FC<TabsContainerProps> = ({
     return pages.map((page, pagerIndex) => {
       const child = childrenArray[page.realIndex];
 
-      // lazy モード: まだ一度も nearby になっていない realIndex は空 View
-      if (lazy && !mountedIndexes.has(page.realIndex)) {
+      // lazy モード: まだ一度も nearby になっていない **pagerIndex** は空 View
+      // (realIndex ではなく pagerIndex でチェックするのがポイント)
+      if (lazy && !mountedPagerIndexes.has(pagerIndex)) {
         return <View key={`pager-lazy-${pagerIndex}`} style={styles.page} />;
       }
 
@@ -488,7 +674,7 @@ export const Container: React.FC<TabsContainerProps> = ({
       }
       return <View key={`pager-empty-${pagerIndex}`} style={styles.page} />;
     });
-  }, [children, pages, lazy, mountedIndexes]);
+  }, [children, pages, lazy, mountedPagerIndexes]);
 
   // 初期ページ（PagerView の initialPage）
   const initialPage = infiniteScroll && tabs.length > 1 ? centerPage : 0;

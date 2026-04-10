@@ -86,6 +86,35 @@ export interface TabBarProps {
   tabScrollRef?: RefObject<ScrollView>;
 }
 
+/**
+ * タブ状態 subscription のコールバック型。
+ * true / false を setState 的に受け取る。
+ *
+ * @param value       新しい active/nearby 状態
+ * @param workletTime (オプション) worklet 側で記録した performance.now() 値。
+ *                    worklet → JS bridge 越えの hop latency を計測したい perf
+ *                    ツール向け。通常の consumer は無視してよい。
+ */
+export type TabBoolSubscriber = (value: boolean, workletTime?: number) => void;
+
+/**
+ * v4.4.0 追加: centralized subscription registry。
+ * Container 内部に 1 個だけ useAnimatedReaction を持ち、
+ * activeIndex / nearbyIndexes の変化を subscribers に通知する。
+ *
+ * これにより N 個のタブが個別に useAnimatedReaction を持つのを避け、
+ * React commit 負荷を激減させる (20 reactions → 1 reaction)。
+ */
+export interface TabSubscriptionAPI {
+  /** 指定 tabIndex が active になった/外れた時に呼ばれる callback を登録 */
+  subscribeToActive: (tabIndex: number, cb: TabBoolSubscriber) => () => void;
+  /** 指定 tabIndex が nearby に入った/外れた時に呼ばれる callback を登録 */
+  subscribeToNearby: (tabIndex: number, cb: TabBoolSubscriber) => () => void;
+  /** 初期値取得 (subscribe 直後にも呼ぶ) */
+  getInitialActive: (tabIndex: number) => boolean;
+  getInitialNearby: (tabIndex: number) => boolean;
+}
+
 export interface TabsContextValue {
   /**
    * アクティブタブのインデックス（SharedValue）
@@ -104,6 +133,8 @@ export interface TabsContextValue {
   updateScrollY: (y: number) => void;
   /** タブ名の配列 */
   tabNames: string[];
+  /** v4.4.0 追加: centralized subscription API (useIsTabActive / useIsNearby から利用) */
+  subscriptions: TabSubscriptionAPI;
 }
 
 export interface TabsFlatListProps<T> extends FlatListProps<T> {

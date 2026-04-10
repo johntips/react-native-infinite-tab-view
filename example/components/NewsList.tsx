@@ -3,10 +3,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InteractionManager, StyleSheet, View } from "react-native";
 import {
   Tabs,
-  useActiveTabIndex,
   useIsNearby,
+  useTabsContext,
 } from "react-native-infinite-tab-view";
-import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
 import type { NewsItem } from "../data/newsItems";
 import { getNewsByCategory } from "../data/newsItems";
 import {
@@ -19,7 +18,13 @@ import {
   useMockStore,
   useMockThrottledRefresh,
 } from "../hooks/useMockHooks";
-import { markListPhase } from "../utils/perfLogger";
+import {
+  markActivation,
+  markListPhase,
+  markMountCost,
+  markReady,
+  markUnmount,
+} from "../utils/perfLogger";
 import { NewsCard } from "./NewsCard";
 
 interface NewsListProps {
@@ -31,40 +36,174 @@ const renderItem = ({ item }: { item: NewsItem }) => <NewsCard item={item} />;
 const keyExtractor = (item: NewsItem) => item.id;
 
 /**
+ * ========================================================================
+ * Heavy Content Primary Claim
+ * ========================================================================
+ *
+ * infinite scroll mode では library の Container が `BUFFER_MULTIPLIER = 10`
+ * に従って 1 realIndex あたり 10 個の virtual page を作る。各 virtual page は
+ * 独自の React インスタンスで同じ NewsList を mount する。
+ *
+ * これにより、1 タブ切り替えで **HeavyNewsListContent が 10 インスタンス
+ * 同時に mount** され、useMockQuery × 3、FlashList、30+ hooks が 10 倍の
+ * コストで JS thread を占有する (実測: 1 タブあたり mount-cost 10 件、
+ * dispatch latency 400-700ms)。
+ *
+ * 対策: モジュールレベルの Map で "このカテゴリの primary インスタンスは誰か"
+ * を追跡し、最初に claim したインスタンスだけ HeavyContent を mount する。
+ * 残りの 9 インスタンスは NewsListSkeleton のまま維持する。
+ *
+ * これは library を変えずに済む consumer side 解決策で、同じパターンを
+ * production の PackList 相当にも適用できる。
+ */
+type PrimaryEntry = {
+  instanceId: number;
+  // 現在 non-primary で待機中のインスタンスの setState コールバック一覧。
+  // primary が unmount したら先頭を promote する。
+  waiters: Array<(v: boolean) => void>;
+};
+const primaryByCategory = new Map<string, PrimaryEntry>();
+let nextInstanceId = 1;
+
+function useHeavyPrimaryClaim(category: string): boolean {
+  const instanceIdRef = useRef<number>(0);
+  if (instanceIdRef.current === 0) {
+    instanceIdRef.current = nextInstanceId++;
+  }
+  const [isPrimary, setIsPrimary] = useState<boolean>(() => {
+    const key = category.toLowerCase();
+    const existing = primaryByCategory.get(key);
+    if (!existing) {
+      primaryByCategory.set(key, {
+        instanceId: instanceIdRef.current,
+        waiters: [],
+      });
+      return true;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const key = category.toLowerCase();
+    const id = instanceIdRef.current;
+    // useState lazy init で既に primary になっていなければ、waiter として登録
+    if (!isPrimary) {
+      const entry = primaryByCategory.get(key);
+      if (entry) {
+        entry.waiters.push(setIsPrimary);
+      }
+    }
+    return () => {
+      const entry = primaryByCategory.get(key);
+      if (!entry) return;
+      if (entry.instanceId === id) {
+        // 自分が primary だった → 解放して次の waiter を promote
+        const next = entry.waiters.shift();
+        if (next) {
+          primaryByCategory.set(key, {
+            instanceId: -1, // 一時的に不明、下で waiter が setIsPrimary(true) した後どうせ再 claim される
+            waiters: entry.waiters,
+          });
+          next(true);
+        } else {
+          primaryByCategory.delete(key);
+        }
+      } else {
+        // 自分は waiter だった → リストから除去
+        const idx = entry.waiters.indexOf(setIsPrimary);
+        if (idx >= 0) entry.waiters.splice(idx, 1);
+      }
+    };
+  }, [category, isPrimary]);
+
+  return isPrimary;
+}
+
+/**
  * ニュースリスト軽量ラッパー
  *
- * Async Follow Design:
+ * Async Follow Design (v2):
  * - アクティブ化前: スケルトンのみ表示（hooks 4個）
  * - アクティブ化後: InteractionManager でスワイプアニメ完了を待ち、重いコンテンツをマウント
- * → タブスワイプを JS thread から完全に切り離し、60fps を担保
+ * - **通過後 (isActive=false AND isNearby=false)**: HeavyNewsListContent をアンマウント
+ *   → JS thread 競合を根絶。9 タブ swipe しても同時 mount は最大 3 タブ（active + nearby±1）
+ *
+ * トレードオフ:
+ * - 一度離れたタブに戻ると Heavy が再 mount される（useMockQuery が再 fetch する）
+ *   → 実アプリでは React Query/tRPC のキャッシュで再 fetch コストを吸収する想定
+ * - 計測ログ上、再訪問時も "mount" が再計測される（意図通り）
  */
 export const NewsList: React.FC<NewsListProps> = memo(
   ({ category, tabIndex }) => {
-    // v4: activeIndex を SharedValue で購読し、自分のタブだけ isActive を更新
-    // → 20個の NewsList が存在しても、setState が走るのは旧/新アクティブの2個のみ
-    const activeIndex = useActiveTabIndex();
-    const [isActive, setIsActive] = useState(tabIndex === 0);
-    const [ready, setReady] = useState(tabIndex === 0);
+    // Heavy primary claim: カテゴリあたり 1 インスタンスだけ Heavy を mount する。
+    // infinite scroll の virtual page 複製 (BUFFER_MULTIPLIER=10) による 10x mount 問題の対策。
+    const isPrimary = useHeavyPrimaryClaim(category);
 
-    useAnimatedReaction(
-      () => activeIndex.value === tabIndex,
-      (current, prev) => {
-        if (current !== prev) {
-          runOnJS(setIsActive)(current);
-        }
-      },
-      [tabIndex],
+    // v4.4.0: Container 側の centralized subscription を直接購読する。
+    // 従来は NewsList 毎に useAnimatedReaction を持っていた (20 個並列) が、
+    // 今は Container の 1 個の reaction から通知を受け取るだけ。
+    // → React commit 時の batch サイズが劇的に減少し、dispatch latency が改善する。
+    const ctx = useTabsContext();
+    const [isActive, setIsActive] = useState(() =>
+      ctx.subscriptions.getInitialActive(tabIndex),
     );
+    // isNearby も同じく centralized subscription 経由
+    const isNearby = useIsNearby(category.toLowerCase());
+    // Heavy コンテンツを表示してよい状態か。
+    // - false: NewsListSkeleton を表示（軽量）
+    // - true: HeavyNewsListContent を mount（30+ hooks、useMockQuery、etc）
+    const [ready, setReady] = useState(tabIndex === 0);
+    // mount ログは "このインスタンスで active になった瞬間" だけ出す。
+    // isActive が高速で true↔false する swipe 中に useEffect が多重発火しても、
+    // markListPhase("mount") は 1 回しか呼ばれないよう ref で固定する。
+    // 遠くに離れて Heavy がアンマウントされたら false に戻し、次回再計測可能にする。
+    const mountLoggedRef = useRef(false);
 
+    // perf 計測を兼ねた subscription callback
+    // workletTime は Container の worklet で取得された performance.now() 値。
+    // markActivation に渡すことで hop latency が計測できる。
+    useEffect(() => {
+      const handleActiveChange = (next: boolean, workletTime?: number) => {
+        if (next) {
+          markActivation(category.toLowerCase(), workletTime);
+        }
+        setIsActive(next);
+      };
+      // マウント時に最新値で同期
+      setIsActive(ctx.subscriptions.getInitialActive(tabIndex));
+      return ctx.subscriptions.subscribeToActive(tabIndex, handleActiveChange);
+    }, [tabIndex, category, ctx.subscriptions]);
+
+    // アクティブ化 → Heavy mount （InteractionManager でスワイプアニメ完了を待つ）
     useEffect(() => {
       if (isActive && !ready) {
-        markListPhase(category, "mount");
+        if (!mountLoggedRef.current) {
+          mountLoggedRef.current = true;
+          markListPhase(category.toLowerCase(), "mount");
+        }
         const handle = InteractionManager.runAfterInteractions(() => {
+          markReady(category.toLowerCase());
           setReady(true);
         });
         return () => handle.cancel();
       }
     }, [isActive, ready, category]);
+
+    // 遠くに離れた (active でなく nearby でもない) → Heavy アンマウント
+    // これにより通過後のタブの setTimeout/useEffect/useMemo が JS thread から退避される。
+    useEffect(() => {
+      if (!isActive && !isNearby && ready) {
+        setReady(false);
+        mountLoggedRef.current = false; // 次回 active 化時に再計測できるようリセット
+      }
+    }, [isActive, isNearby, ready]);
+
+    // NOTE: primary claim は一旦無効化。consumer 側で claim すると
+    // PagerView の "visible pagerIndex" と primary instance が一致せず、
+    // user が見てる tab が skeleton で固まる問題が出るため。
+    // 正しい fix は library 側 (Container.tsx) で mountedIndexes を
+    // realIndex ではなく pagerIndex でトラックすること。
+    void isPrimary;
 
     if (!ready) {
       return <NewsListSkeleton />;
@@ -114,6 +253,34 @@ const HeavyNewsListContent = memo(function HeavyNewsListContent({
 }: {
   category: string;
 }) {
+  // --- mount コスト計測: render 開始時刻を useRef に記録 ---
+  // useState の lazy init を使って "初回 render 時刻" を取得
+  const mountStartTimeRef = useRef<number | null>(null);
+  if (mountStartTimeRef.current === null) {
+    mountStartTimeRef.current = performance.now();
+  }
+
+  // --- unmount コスト計測 (start marker: 宣言順が逆になるため最初の effect) ---
+  // React cleanup は宣言の逆順で実行される。つまり、この effect の cleanup は
+  // このコンポーネント内の **すべての useEffect cleanup が終わった後** に最後に呼ばれる。
+  // 開始時刻マーカーは最後に宣言した effect の cleanup で打ち、終了時刻をここで打つ。
+  const unmountStartRef = useRef<number | null>(null);
+  useEffect(() => {
+    // mount が完了した時点でコストを記録 (render 開始 → useEffect fire)
+    if (mountStartTimeRef.current !== null) {
+      const mountCost = performance.now() - mountStartTimeRef.current;
+      markMountCost(category.toLowerCase(), mountCost);
+      mountStartTimeRef.current = null; // 再発火を防ぐ
+    }
+    return () => {
+      // ここが最後に実行される → unmountStartRef.current との差分が unmount 総コスト
+      if (unmountStartRef.current !== null) {
+        const dur = performance.now() - unmountStartRef.current;
+        markUnmount(category.toLowerCase(), dur);
+      }
+    };
+  }, [category]);
+
   // --- Context / Store 参照（軽量、並列）---
   const { authenticated, user } = useMockAuth();
   const { pendingInvalidation, pendingToast, clearPending } = useMockStore();
@@ -132,6 +299,8 @@ const HeavyNewsListContent = memo(function HeavyNewsListContent({
   const prevSortOrderRef = useRef(sortOrder);
   const scrollPositionRef = useRef(0);
   const isFirstMountRef = useRef(true);
+  // paint 計測用 RAF ハンドル（unmount 時に cancel するため）
+  const rafRef = useRef<number | null>(null);
 
   // --- Reanimated 駆動フック（UI thread、並列）---
   const { scrollY } = useMockScrollTracking();
@@ -175,7 +344,7 @@ const HeavyNewsListContent = memo(function HeavyNewsListContent({
   // data 取得完了を計測
   useEffect(() => {
     if (data) {
-      markListPhase(category, "dataReady");
+      markListPhase(category.toLowerCase(), "dataReady");
     }
   }, [data, category]);
 
@@ -275,14 +444,42 @@ const HeavyNewsListContent = memo(function HeavyNewsListContent({
     return sortedData.filter((item) => item.tags.includes(filterTag));
   }, [sortedData, filterTag]);
 
-  // 最初の render 実行時を計測
+  // 最初の paint を計測
+  // useEffect は commit 直後に走るため、この時点ではまだ native の描画は終わっていない。
+  // requestAnimationFrame を 2 回経由すると、ほぼ実際の paint 完了後のタイミングで発火する。
+  // これにより data:x paint:y が意味のある値になる（paint:0ms の計測バグ対策）。
   const firstRenderMarkedRef = useRef(false);
   useEffect(() => {
     if (filteredData.length > 0 && !firstRenderMarkedRef.current) {
       firstRenderMarkedRef.current = true;
-      markListPhase(category, "firstRender");
+      const raf1 = requestAnimationFrame(() => {
+        const raf2 = requestAnimationFrame(() => {
+          markListPhase(category.toLowerCase(), "firstRender");
+          rafRef.current = null;
+        });
+        rafRef.current = raf2;
+      });
+      rafRef.current = raf1;
     }
   }, [filteredData.length, category]);
+
+  // RAF cleanup: unmount 時に残った raf を解放
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
+
+  // --- unmount コスト計測 (end marker: 最後に宣言する) ---
+  // 宣言順が最後 = cleanup が最初に呼ばれる → ここで "unmount 開始時刻" を記録し、
+  // 最初に宣言した effect の cleanup (= 最後に呼ばれる) で差分を取る。
+  useEffect(() => {
+    return () => {
+      unmountStartRef.current = performance.now();
+    };
+  }, []);
 
   if (isPending || !data) {
     return <NewsListSkeleton />;

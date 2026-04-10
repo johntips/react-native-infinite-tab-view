@@ -1,81 +1,152 @@
 /**
- * パフォーマンス計測ユーティリティ (FPS ベース)
+ * パフォーマンス計測ユーティリティ
  *
- * 主要指標:
- *   🎯 tab swipe latency (ms → effective FPS)
- *     スワイプ → list mount 開始までの JS thread 遅延を測定。
- *     FPS 換算: 1000 / latency
- *     評価:
- *       - 60fps (16.67ms 以下): 🟢 perfect
- *       - 45fps (22ms 以下):    🟢 smooth
- *       - 30fps (33ms 以下):    🟡 acceptable
- *       - 20fps (50ms 以下):    🟠 janky
- *       - < 20fps (50ms 超):    🔴 broken
+ * 🎯 計測の anchor = "activation"
+ *   タブが active になった瞬間 (useAnimatedReaction の worklet → runOnJS で
+ *   setIsActive(true) が JS thread に到達した瞬間) を 0 点とする。
  *
- *   🎯 swipe interval (高速連続スワイプ耐性)
- *     前回スワイプから今回スワイプまでの間隔。
+ *   なぜ markTabSwitch (onTabChange) を使わないか:
+ *   library の onTabChange は swipe 終了 (idle) まで遅延される設計 (Container.tsx:164)。
+ *   一方 activeIndex の SharedValue は swipe 中に即更新され、useAnimatedReaction の
+ *   runOnJS(setIsActive) は swipe 開始直後に JS thread に到達する。
+ *   → この2つを混ぜると "s→a" に idle 遅延分が乗って計測が壊れる。
  *
- * 副次指標:
- *   - data load: 模擬 API fetch 完了まで
- *   - first paint: 最初のカード描画まで
- *   - total: スワイプ開始から全フェーズ完了まで
+ * 計測フェーズ:
+ *   activation  — setIsActive(true) が JS thread に着いた時刻 (= anchor)
+ *   mount       — NewsList の useEffect が発火した時刻 (React commit 完了)
+ *   ready       — InteractionManager.runAfterInteractions の callback が走った時刻
+ *   dataReady   — useMockQuery の data が state に入った時刻
+ *   firstRender — RAF x2 経由で native paint が終わった時刻
+ *
+ * 内訳:
+ *   dispatch = mount - activation   (React commit + useEffect scheduling)
+ *   idle     = ready - mount        (InteractionManager 待ち時間)
+ *   data     = dataReady - ready    (mock fetch 300ms + state propagation)
+ *   paint    = firstRender - dataReady (RAF x2 + native paint)
+ *   total    = firstRender - activation
+ *
+ *   オプション: hop = activation - workletTimeAtActivation
+ *     worklet → JS thread の bridge 越えコスト。
+ *     Reanimated worklet で performance.now() が取れれば計測可能。
+ *
+ * dispatch の評価:
+ *   ≤  32ms  🟢 FAST       — JS thread 空き
+ *   ≤  64ms  🟢 OK         — 軽微な負荷
+ *   ≤ 128ms  🟡 SLOW       — 目に見える遅延
+ *   ≤ 300ms  🟠 LAGGY      — ユーザー体感の引っかかり
+ *   > 300ms  🔴 BLOCKED    — JS thread 詰まり
  */
 
 interface PerfEntry {
   category: string;
-  listMountAt?: number;
-  dataReadyAt?: number;
-  firstRenderAt?: number;
+  activationAt: number; // anchor: setIsActive が JS thread に到達した時刻
+  workletTimeAtActivation?: number; // worklet 側で記録した時刻 (hop 計測用)
+  mountAt?: number;
+  readyAt?: number;
+  dataAt?: number;
+  paintAt?: number;
 }
 
 const entries = new Map<string, PerfEntry>();
-let lastTabSwitchAt = 0;
-let prevTabSwitchAt = 0;
-let lastTabSwitchFrom = "";
-let lastTabSwitchTo = "";
 
-const FPS_THRESHOLDS = [
-  { ms: 16.67, fps: 60, icon: "🟢", label: "60fps" },
-  { ms: 22.22, fps: 45, icon: "🟢", label: "45fps" },
-  { ms: 33.33, fps: 30, icon: "🟡", label: "30fps" },
-  { ms: 50.0, fps: 20, icon: "🟠", label: "20fps" },
-] as const;
+const STALE_THRESHOLD_MS = 30_000;
 
-function msToFpsLabel(ms: number): {
-  icon: string;
-  fps: number;
-  label: string;
-} {
-  for (const t of FPS_THRESHOLDS) {
-    if (ms <= t.ms) return { icon: t.icon, fps: t.fps, label: t.label };
+const LATENCY_THRESHOLDS: Array<{ ms: number; icon: string; label: string }> = [
+  { ms: 32, icon: "🟢", label: "FAST    " },
+  { ms: 64, icon: "🟢", label: "OK      " },
+  { ms: 128, icon: "🟡", label: "SLOW    " },
+  { ms: 300, icon: "🟠", label: "LAGGY   " },
+];
+
+function fmtLatency(ms: number): string {
+  for (const t of LATENCY_THRESHOLDS) {
+    if (ms <= t.ms) return `${t.icon} ${t.label}`;
   }
-  const fps = Math.round(1000 / ms);
-  return { icon: "🔴", fps, label: `${fps}fps` };
+  return "🔴 BLOCKED ";
+}
+
+function fmtMs(n: number | undefined): string {
+  return n !== undefined ? `${n.toFixed(0)}ms`.padStart(6) : "   N/A";
 }
 
 /**
- * タブ切り替え開始を記録
+ * ローカル HTTP ログサーバーに [PERF] 行を送る。
+ * /tmp/perf-log-server.js で受信、/tmp/perf.log に書き出される。
+ * Claude Code が自動計測ループを回すために使う。
+ * 失敗は無視 (server 停止中でも app 動作を阻害しない)。
  */
-export function markTabSwitch(from: string, to: string): void {
-  const now = performance.now();
-  prevTabSwitchAt = lastTabSwitchAt;
-  lastTabSwitchAt = now;
-  lastTabSwitchFrom = from;
-  lastTabSwitchTo = to;
-  entries.delete(to);
-
-  // 連続スワイプ間隔
-  if (prevTabSwitchAt > 0) {
-    const interval = now - prevTabSwitchAt;
-    const intervalIcon = interval < 200 ? "⚡️" : interval < 500 ? "🚀" : "🐢";
-    console.log(
-      `[PERF] ${intervalIcon} swipe ${from.padEnd(12)} → ${to.padEnd(12)} | interval: ${interval.toFixed(0)}ms`,
-    );
-  } else {
-    console.log(
-      `[PERF]    swipe ${from.padEnd(12)} → ${to.padEnd(12)} | (first swipe)`,
-    );
+function postLog(line: string): void {
+  try {
+    fetch("http://127.0.0.1:9999/log", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: line,
+    }).catch(() => {});
+  } catch {
+    // noop
   }
+}
+
+function logLine(line: string): void {
+  console.log(line);
+  postLog(line);
+}
+
+/**
+ * 30 秒以上古いエントリを GC する。
+ * firstRender が RAF cancel で到達しなかったエントリが残り続けるのを防ぐ。
+ */
+function gcStaleEntries(now: number): void {
+  for (const [key, entry] of entries) {
+    if (now - entry.activationAt > STALE_THRESHOLD_MS) {
+      entries.delete(key);
+    }
+  }
+}
+
+/**
+ * タブ切替の "JS thread 到達時刻" を記録する。
+ * useAnimatedReaction の runOnJS から setIsActive(true) が呼ばれる直前に呼ぶ。
+ *
+ * @param category  タブ名 (lowercase)
+ * @param workletTime  (オプション) worklet 側で記録した performance.now() 値
+ */
+export function markActivation(category: string, workletTime?: number): void {
+  const now = performance.now();
+  gcStaleEntries(now);
+  // 既存エントリがあっても上書きする (= 再 activation を許容)
+  entries.set(category, {
+    category,
+    activationAt: now,
+    workletTimeAtActivation: workletTime,
+  });
+}
+
+/**
+ * InteractionManager.runAfterInteractions 通過後の時刻を記録。
+ */
+export function markReady(category: string): void {
+  const entry = entries.get(category);
+  if (!entry || entry.readyAt !== undefined) return;
+  entry.readyAt = performance.now();
+}
+
+/**
+ * unmount 時間を記録 (全 unmount をログ、閾値なし)。
+ */
+export function markUnmount(category: string, durationMs: number): void {
+  logLine(
+    `[PERF] 🗑 unmount       → ${category.padEnd(14)} | cost:${fmtMs(durationMs)}`,
+  );
+}
+
+/**
+ * mount コスト (HeavyNewsListContent の初回 render 完了までの時間) を記録
+ */
+export function markMountCost(category: string, durationMs: number): void {
+  logLine(
+    `[PERF] ⚡ mount-cost    → ${category.padEnd(14)} | cost:${fmtMs(durationMs)}`,
+  );
 }
 
 /**
@@ -86,51 +157,67 @@ export function markListPhase(
   phase: "mount" | "dataReady" | "firstRender",
 ): void {
   const now = performance.now();
-  let entry = entries.get(category);
-  if (!entry) {
-    entry = { category };
-    entries.set(category, entry);
+  const entry = entries.get(category);
+  if (!entry) return;
+
+  if (phase === "mount") {
+    if (entry.mountAt !== undefined) return;
+    entry.mountAt = now;
+    const dispatch = now - entry.activationAt;
+    const hop =
+      entry.workletTimeAtActivation !== undefined
+        ? entry.activationAt - entry.workletTimeAtActivation
+        : undefined;
+    const label = fmtLatency(dispatch);
+    logLine(
+      `[PERF] ${label} → ${category.padEnd(14)} | dispatch:${fmtMs(dispatch)}  hop:${fmtMs(hop)}`,
+    );
+    return;
   }
 
-  if (phase === "mount") entry.listMountAt = now;
-  if (phase === "dataReady") entry.dataReadyAt = now;
+  if (phase === "dataReady") {
+    if (entry.dataAt !== undefined) return;
+    entry.dataAt = now;
+    return;
+  }
+
   if (phase === "firstRender") {
-    entry.firstRenderAt = now;
-    if (category === lastTabSwitchTo) {
-      reportSummary(category, entry);
-    }
+    if (entry.paintAt !== undefined) return;
+    entry.paintAt = now;
+    const idleWait =
+      entry.readyAt !== undefined && entry.mountAt !== undefined
+        ? entry.readyAt - entry.mountAt
+        : undefined;
+    const dataLoad =
+      entry.dataAt !== undefined && entry.readyAt !== undefined
+        ? entry.dataAt - entry.readyAt
+        : entry.dataAt !== undefined && entry.mountAt !== undefined
+          ? entry.dataAt - entry.mountAt
+          : undefined;
+    const firstPaint =
+      entry.dataAt !== undefined ? entry.paintAt - entry.dataAt : undefined;
+    const total = entry.paintAt - entry.activationAt;
+    logLine(
+      `[PERF]   └─ ${category.padEnd(14)} | idle:${fmtMs(idleWait)} data:${fmtMs(dataLoad)} paint:${fmtMs(firstPaint)} total:${fmtMs(total)}`,
+    );
+    entries.delete(category);
   }
 }
 
-function reportSummary(category: string, entry: PerfEntry): void {
-  const tabLatency =
-    entry.listMountAt !== undefined
-      ? entry.listMountAt - lastTabSwitchAt
-      : undefined;
-  const dataLoad =
-    entry.dataReadyAt !== undefined && entry.listMountAt !== undefined
-      ? entry.dataReadyAt - entry.listMountAt
-      : undefined;
-  const firstPaint =
-    entry.firstRenderAt !== undefined && entry.dataReadyAt !== undefined
-      ? entry.firstRenderAt - entry.dataReadyAt
-      : undefined;
-  const total =
-    entry.firstRenderAt !== undefined
-      ? entry.firstRenderAt - lastTabSwitchAt
-      : undefined;
+// --- 後方互換: 旧 API (no-op or aliasing) ---
 
-  // 🎯 メイン: tab swipe latency → FPS 換算
-  const fpsInfo = tabLatency !== undefined ? msToFpsLabel(tabLatency) : null;
+/**
+ * @deprecated markActivation を使うこと。
+ * onTabChange は idle 遅延されるため anchor には使えない。
+ * 呼ばれても何もしない (後方互換のため残置)。
+ */
+export function markTabSwitch(_from: string, _to: string): void {
+  // no-op
+}
 
-  const fmt = (n: number | undefined) =>
-    n !== undefined ? `${n.toFixed(0)}ms`.padStart(7) : "    N/A";
-
-  const fpsStr = fpsInfo
-    ? `${fpsInfo.icon} ${fpsInfo.label.padStart(5)}`
-    : "    N/A";
-
-  console.log(
-    `[PERF] ${fpsStr} ${lastTabSwitchFrom.padEnd(12)} → ${category.padEnd(12)} | latency:${fmt(tabLatency)} data:${fmt(dataLoad)} paint:${fmt(firstPaint)} total:${fmt(total)}`,
-  );
+/**
+ * @deprecated markActivation を使うこと。
+ */
+export function markActive(category: string): void {
+  markActivation(category);
 }
