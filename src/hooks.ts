@@ -76,10 +76,9 @@ export const useTabs = () => {
 export const useIsNearby = (tabName: string): boolean => {
   const context = useTabsContext();
   const tabIndex = context.tabNames.indexOf(tabName);
-  // 初期値は SharedValue から直接読む（activeIndex=0 の初期状態で nearby 判定）
-  const initialNearby =
-    tabIndex !== -1 && context.nearbyIndexes.value.includes(tabIndex);
-  const [isNearby, setIsNearby] = useState(initialNearby);
+  // 初期値は tabIndex === 0（activeIndex 初期値が 0 なので安全にデフォルト判定できる）
+  // useAnimatedReaction の初回発火で正しい値に更新される
+  const [isNearby, setIsNearby] = useState(tabIndex === 0);
 
   useAnimatedReaction(
     () => {

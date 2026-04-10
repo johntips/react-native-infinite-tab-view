@@ -1,30 +1,81 @@
 /**
- * パフォーマンス計測ユーティリティ
- * タブスワイプの応答性と重いリスト描画時間を数値化する。
+ * パフォーマンス計測ユーティリティ (FPS ベース)
+ *
+ * 主要指標:
+ *   🎯 tab swipe latency (ms → effective FPS)
+ *     スワイプ → list mount 開始までの JS thread 遅延を測定。
+ *     FPS 換算: 1000 / latency
+ *     評価:
+ *       - 60fps (16.67ms 以下): 🟢 perfect
+ *       - 45fps (22ms 以下):    🟢 smooth
+ *       - 30fps (33ms 以下):    🟡 acceptable
+ *       - 20fps (50ms 以下):    🟠 janky
+ *       - < 20fps (50ms 超):    🔴 broken
+ *
+ *   🎯 swipe interval (高速連続スワイプ耐性)
+ *     前回スワイプから今回スワイプまでの間隔。
+ *
+ * 副次指標:
+ *   - data load: 模擬 API fetch 完了まで
+ *   - first paint: 最初のカード描画まで
+ *   - total: スワイプ開始から全フェーズ完了まで
  */
 
 interface PerfEntry {
   category: string;
-  startAt: number;
-  mountAt?: number;
+  listMountAt?: number;
   dataReadyAt?: number;
   firstRenderAt?: number;
 }
 
 const entries = new Map<string, PerfEntry>();
 let lastTabSwitchAt = 0;
+let prevTabSwitchAt = 0;
 let lastTabSwitchFrom = "";
 let lastTabSwitchTo = "";
+
+const FPS_THRESHOLDS = [
+  { ms: 16.67, fps: 60, icon: "🟢", label: "60fps" },
+  { ms: 22.22, fps: 45, icon: "🟢", label: "45fps" },
+  { ms: 33.33, fps: 30, icon: "🟡", label: "30fps" },
+  { ms: 50.0, fps: 20, icon: "🟠", label: "20fps" },
+] as const;
+
+function msToFpsLabel(ms: number): {
+  icon: string;
+  fps: number;
+  label: string;
+} {
+  for (const t of FPS_THRESHOLDS) {
+    if (ms <= t.ms) return { icon: t.icon, fps: t.fps, label: t.label };
+  }
+  const fps = Math.round(1000 / ms);
+  return { icon: "🔴", fps, label: `${fps}fps` };
+}
 
 /**
  * タブ切り替え開始を記録
  */
 export function markTabSwitch(from: string, to: string): void {
   const now = performance.now();
+  prevTabSwitchAt = lastTabSwitchAt;
   lastTabSwitchAt = now;
   lastTabSwitchFrom = from;
   lastTabSwitchTo = to;
-  console.log(`[PERF] 🎬 Tab switch: ${from} → ${to} @ ${now.toFixed(0)}ms`);
+  entries.delete(to);
+
+  // 連続スワイプ間隔
+  if (prevTabSwitchAt > 0) {
+    const interval = now - prevTabSwitchAt;
+    const intervalIcon = interval < 200 ? "⚡️" : interval < 500 ? "🚀" : "🐢";
+    console.log(
+      `[PERF] ${intervalIcon} swipe ${from.padEnd(12)} → ${to.padEnd(12)} | interval: ${interval.toFixed(0)}ms`,
+    );
+  } else {
+    console.log(
+      `[PERF]    swipe ${from.padEnd(12)} → ${to.padEnd(12)} | (first swipe)`,
+    );
+  }
 }
 
 /**
@@ -37,35 +88,28 @@ export function markListPhase(
   const now = performance.now();
   let entry = entries.get(category);
   if (!entry) {
-    entry = { category, startAt: now };
+    entry = { category };
     entries.set(category, entry);
   }
 
-  switch (phase) {
-    case "mount":
-      entry.mountAt = now;
-      break;
-    case "dataReady":
-      entry.dataReadyAt = now;
-      break;
-    case "firstRender":
-      entry.firstRenderAt = now;
-      if (category === lastTabSwitchTo) {
-        reportSummary(category, entry);
-      }
-      break;
+  if (phase === "mount") entry.listMountAt = now;
+  if (phase === "dataReady") entry.dataReadyAt = now;
+  if (phase === "firstRender") {
+    entry.firstRenderAt = now;
+    if (category === lastTabSwitchTo) {
+      reportSummary(category, entry);
+    }
   }
 }
 
-/**
- * 計測結果のサマリーをログ出力
- */
 function reportSummary(category: string, entry: PerfEntry): void {
-  const tabResponse =
-    entry.mountAt !== undefined ? entry.mountAt - lastTabSwitchAt : undefined;
+  const tabLatency =
+    entry.listMountAt !== undefined
+      ? entry.listMountAt - lastTabSwitchAt
+      : undefined;
   const dataLoad =
-    entry.dataReadyAt !== undefined && entry.mountAt !== undefined
-      ? entry.dataReadyAt - entry.mountAt
+    entry.dataReadyAt !== undefined && entry.listMountAt !== undefined
+      ? entry.dataReadyAt - entry.listMountAt
       : undefined;
   const firstPaint =
     entry.firstRenderAt !== undefined && entry.dataReadyAt !== undefined
@@ -76,44 +120,17 @@ function reportSummary(category: string, entry: PerfEntry): void {
       ? entry.firstRenderAt - lastTabSwitchAt
       : undefined;
 
+  // 🎯 メイン: tab swipe latency → FPS 換算
+  const fpsInfo = tabLatency !== undefined ? msToFpsLabel(tabLatency) : null;
+
   const fmt = (n: number | undefined) =>
-    n !== undefined ? `${n.toFixed(0)}ms` : "N/A";
+    n !== undefined ? `${n.toFixed(0)}ms`.padStart(7) : "    N/A";
 
-  const tabResponseScore =
-    tabResponse !== undefined
-      ? tabResponse < 16
-        ? "🟢 60fps"
-        : tabResponse < 33
-          ? "🟡 30fps"
-          : "🔴 slow"
-      : "";
+  const fpsStr = fpsInfo
+    ? `${fpsInfo.icon} ${fpsInfo.label.padStart(5)}`
+    : "    N/A";
 
   console.log(
-    `[PERF] 📊 ${lastTabSwitchFrom} → ${category}\n` +
-      `       tab response  : ${fmt(tabResponse)} ${tabResponseScore}\n` +
-      `       data load     : ${fmt(dataLoad)}\n` +
-      `       first paint   : ${fmt(firstPaint)}\n` +
-      `       ─────────────────────────\n` +
-      `       total         : ${fmt(total)}`,
-  );
-}
-
-/**
- * 計測エントリをリセット
- */
-export function resetPerfEntry(category: string): void {
-  entries.delete(category);
-}
-
-/**
- * タブ切り替え応答性（タブインジケーターが動き出すまでの時間）を記録
- */
-export function markTabIndicatorMoved(to: string): void {
-  const now = performance.now();
-  const elapsed = now - lastTabSwitchAt;
-  const score =
-    elapsed < 16 ? "🟢 60fps" : elapsed < 33 ? "🟡 30fps" : "🔴 slow";
-  console.log(
-    `[PERF] 🎯 Tab indicator moved to ${to}: ${elapsed.toFixed(0)}ms ${score}`,
+    `[PERF] ${fpsStr} ${lastTabSwitchFrom.padEnd(12)} → ${category.padEnd(12)} | latency:${fmt(tabLatency)} data:${fmt(dataLoad)} paint:${fmt(firstPaint)} total:${fmt(total)}`,
   );
 }

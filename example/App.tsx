@@ -1,18 +1,9 @@
 import { SafeAreaView, StatusBar, StyleSheet } from "react-native";
-import { type DebugLogEvent, Tabs } from "react-native-infinite-tab-view";
+import { Tabs } from "react-native-infinite-tab-view";
 import { BannerHeader } from "./components/BannerHeader";
 import { NewsList } from "./components/NewsList";
 import { NEWS_CATEGORIES } from "./data/newsItems";
 import { markTabSwitch } from "./utils/perfLogger";
-
-const handleDebugLog = (event: DebugLogEvent) => {
-  // Debug log for development — tab lifecycle tracking
-  if (event.type === "tab-active") {
-    console.log(
-      `[Lib] ${event.type} | ${event.tabName} (idx:${event.tabIndex})${event.detail ? ` | ${event.detail}` : ""}`,
-    );
-  }
-};
 
 export default function App() {
   return (
@@ -23,12 +14,10 @@ export default function App() {
           renderHeader={() => <BannerHeader />}
           headerHeight={200}
           onTabChange={(event) => {
-            // パフォーマンス計測: タブ切り替え開始
+            // パフォーマンス計測: タブ切り替え開始のみ
             markTabSwitch(event.prevTabName, event.tabName);
           }}
           lazy={true}
-          debug={__DEV__}
-          onDebugLog={handleDebugLog}
         >
           {NEWS_CATEGORIES.map((category, index) => (
             <Tabs.Tab

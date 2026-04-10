@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.3] - 2026-04-10
+
+### Fixed
+
+- `useIsNearby` hook: 初期値計算で SharedValue を render 中に読んでいた警告 (`Reading from \`value\` during component render`) を修正
+
+### Example
+
+- FPS ベースのパフォーマンスロガーを導入。タブスワイプレイテンシを 60fps/45fps/30fps/20fps のしきい値で評価
+- Reanimated debug log を抑止（ノイズ削減）
+
 ## [4.3.2] - 2026-04-10
 
 ### Fixed
