@@ -98,26 +98,6 @@ export const useIsNearby = (tabName: string): boolean => {
 };
 
 /**
- * 指定タブが「nearby」かを SharedValue で返すフック（re-render なし）
- * v4.0.0 新規追加。worklet 内で使用することを想定。
- */
-export const useIsNearbyShared = (tabName: string): SharedValue<boolean> => {
-  const context = useTabsContext();
-  const tabIndex = context.tabNames.indexOf(tabName);
-  // useDerivedValue を dynamic import 風に使いたいが、固定で最上位呼び出しが必要
-  // → シンプルに nearbyIndexes を露出して利用側で .value.includes するのが確実
-  //   現時点では useIsNearby を返す方針で、将来 useDerivedValue に差し替え
-  // biome-ignore lint/suspicious/noExplicitAny: return type placeholder
-  return {
-    get value() {
-      "worklet";
-      if (tabIndex === -1) return false;
-      return context.nearbyIndexes.value.includes(tabIndex);
-    },
-  } as SharedValue<boolean>;
-};
-
-/**
  * 現在の nearbyIndexes（アクティブ + 隣接タブのインデックス配列）を SharedValue で返すフック
  * v4.0.0 で `number[]` から `SharedValue<number[]>` に変更（BREAKING）
  */
