@@ -62,7 +62,7 @@
     "react-native-reanimated": "^4.2.1",
     "react-native-web": "^0.21.0",
     "typescript": "~5.7.0",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.4"
   },
   "files": [
     "lib",
