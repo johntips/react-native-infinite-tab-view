@@ -129,29 +129,23 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
     },
     forwardedRef,
   ) => {
-    // useAnimatedRef — worklet から scrollTo するため
+    // useAnimatedRef を直接 Animated.ScrollView に渡す（worklet から scrollTo するため）
+    // 内部の ViewTag 登録が有効化される
     const animatedScrollRef = useAnimatedRef<ScrollViewType>();
-    const localScrollRef = useRef<ScrollViewType | null>(null);
     const hasInitiallyScrolled = useRef(false);
     const lastCenteredIndex = useRef<number | null>(null);
 
-    const setRef = useCallback(
-      (node: ScrollViewType | null) => {
-        localScrollRef.current = node;
-        // useAnimatedRef の internal に node を同期
+    // forwardedRef を useEffect 経由で同期（useAnimatedRef の ViewTag 登録を妨げない）
+    useEffect(() => {
+      const node = animatedScrollRef.current;
+      if (typeof forwardedRef === "function") {
+        forwardedRef(node);
+      } else if (forwardedRef) {
         (
-          animatedScrollRef as unknown as { current: ScrollViewType | null }
+          forwardedRef as React.MutableRefObject<ScrollViewType | null>
         ).current = node;
-        if (typeof forwardedRef === "function") {
-          forwardedRef(node);
-        } else if (forwardedRef) {
-          (
-            forwardedRef as React.MutableRefObject<ScrollViewType | null>
-          ).current = node;
-        }
-      },
-      [forwardedRef, animatedScrollRef],
-    );
+      }
+    }, [forwardedRef, animatedScrollRef]);
     const totalVirtualTabs = infiniteScroll
       ? tabs.length * VIRTUAL_MULTIPLIER
       : tabs.length;
@@ -301,13 +295,13 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       }
 
       // センタリング
-      if (centerActive && scrollEnabled && localScrollRef.current) {
+      if (centerActive && scrollEnabled && animatedScrollRef.current) {
         if (lastCenteredIndex.current !== activeVirtualIndex) {
           lastCenteredIndex.current = activeVirtualIndex;
           const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
           const shouldAnimate = hasInitiallyScrolled.current;
           hasInitiallyScrolled.current = true;
-          localScrollRef.current.scrollTo({
+          animatedScrollRef.current.scrollTo({
             x: Math.max(0, scrollX),
             animated: shouldAnimate,
           });
@@ -339,11 +333,11 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
         INDICATOR_TIMING_CONFIG,
       );
 
-      if (centerActive && scrollEnabled && localScrollRef.current) {
+      if (centerActive && scrollEnabled && animatedScrollRef.current) {
         if (lastCenteredIndex.current !== activeVirtualIndex) {
           lastCenteredIndex.current = activeVirtualIndex;
           const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
-          localScrollRef.current.scrollTo({
+          animatedScrollRef.current.scrollTo({
             x: Math.max(0, scrollX),
             animated: true,
           });
@@ -405,8 +399,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
 
     return (
       <Animated.ScrollView
-        // biome-ignore lint/suspicious/noExplicitAny: Animated.ScrollView の ref 型
-        ref={setRef as any}
+        ref={animatedScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         scrollEventThrottle={16}

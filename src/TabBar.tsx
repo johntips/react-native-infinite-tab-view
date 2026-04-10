@@ -115,23 +115,17 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
     forwardedRef,
   ) => {
     const animatedScrollRef = useAnimatedRef<ScrollView>();
-    const localScrollRef = useRef<ScrollView | null>(null);
 
-    const setRef = useCallback(
-      (node: ScrollView | null) => {
-        localScrollRef.current = node;
-        (
-          animatedScrollRef as unknown as { current: ScrollView | null }
-        ).current = node;
-        if (typeof forwardedRef === "function") {
-          forwardedRef(node);
-        } else if (forwardedRef) {
-          (forwardedRef as React.MutableRefObject<ScrollView | null>).current =
-            node;
-        }
-      },
-      [forwardedRef, animatedScrollRef],
-    );
+    // forwardedRef を useEffect 経由で同期
+    useEffect(() => {
+      const node = animatedScrollRef.current;
+      if (typeof forwardedRef === "function") {
+        forwardedRef(node);
+      } else if (forwardedRef) {
+        (forwardedRef as React.MutableRefObject<ScrollView | null>).current =
+          node;
+      }
+    }, [forwardedRef, animatedScrollRef]);
 
     const hasInitiallyScrolled = useRef(false);
     const lastCenteredIndex = useRef<number | null>(null);
@@ -255,13 +249,13 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
         hasInitialIndicator.current = true;
       }
 
-      if (centerActive && localScrollRef.current) {
+      if (centerActive && animatedScrollRef.current) {
         if (lastCenteredIndex.current !== activeVirtualIndex) {
           lastCenteredIndex.current = activeVirtualIndex;
           const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
           const shouldAnimate = hasInitiallyScrolled.current;
           hasInitiallyScrolled.current = true;
-          localScrollRef.current.scrollTo({
+          animatedScrollRef.current.scrollTo({
             x: Math.max(0, scrollX),
             animated: shouldAnimate,
           });
@@ -281,11 +275,11 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
       indicatorX.value = withTiming(layout.x, INDICATOR_TIMING_CONFIG);
       indicatorWidth.value = withTiming(layout.width, INDICATOR_TIMING_CONFIG);
 
-      if (centerActive && localScrollRef.current) {
+      if (centerActive && animatedScrollRef.current) {
         if (lastCenteredIndex.current !== activeVirtualIndex) {
           lastCenteredIndex.current = activeVirtualIndex;
           const scrollX = layout.x + layout.width / 2 - SCREEN_WIDTH / 2;
-          localScrollRef.current.scrollTo({
+          animatedScrollRef.current.scrollTo({
             x: Math.max(0, scrollX),
             animated: true,
           });
@@ -301,8 +295,7 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
 
     return (
       <Animated.ScrollView
-        // biome-ignore lint/suspicious/noExplicitAny: Animated.ScrollView の ref 型
-        ref={setRef as any}
+        ref={animatedScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
