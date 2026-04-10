@@ -30,13 +30,13 @@ export default function App() {
           debug={__DEV__}
           onDebugLog={handleDebugLog}
         >
-          {NEWS_CATEGORIES.map((category) => (
+          {NEWS_CATEGORIES.map((category, index) => (
             <Tabs.Tab
               key={category}
               name={category.toLowerCase()}
               label={category}
             >
-              <NewsList category={category} />
+              <NewsList category={category} tabIndex={index} />
             </Tabs.Tab>
           ))}
         </Tabs.Container>

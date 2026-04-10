@@ -20,8 +20,10 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
+  scrollTo as reanimatedScrollTo,
   runOnJS,
   useAnimatedReaction,
+  useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -128,6 +130,8 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
     },
     forwardedRef,
   ) => {
+    // useAnimatedRef — worklet から scrollTo するため
+    const animatedScrollRef = useAnimatedRef<ScrollViewType>();
     const localScrollRef = useRef<ScrollViewType | null>(null);
     const hasInitiallyScrolled = useRef(false);
     const lastCenteredIndex = useRef<number | null>(null);
@@ -135,6 +139,10 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
     const setRef = useCallback(
       (node: ScrollViewType | null) => {
         localScrollRef.current = node;
+        // useAnimatedRef の internal に node を同期
+        (
+          animatedScrollRef as unknown as { current: ScrollViewType | null }
+        ).current = node;
         if (typeof forwardedRef === "function") {
           forwardedRef(node);
         } else if (forwardedRef) {
@@ -143,7 +151,7 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
           ).current = node;
         }
       },
-      [forwardedRef],
+      [forwardedRef, animatedScrollRef],
     );
     const totalVirtualTabs = infiniteScroll
       ? tabs.length * VIRTUAL_MULTIPLIER
@@ -200,13 +208,13 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
       // 次フレームに遅延（現在フレームの gesture 処理を優先）
       requestAnimationFrame(() => setActiveIndexState(v));
     }, []);
-    // インジケーター移動を worklet で直接駆動（JS thread を経由しない）
+    // インジケーター移動 + センタリングを worklet で直接駆動
+    // JS thread を一切経由せず、リスト描画の重さに影響されない
     useAnimatedReaction(
       () => activeIndex.value,
       (current, prev) => {
         if (current === prev) return;
 
-        // インジケーター位置を UI thread で即時更新
         const xs = tabLayoutXs.value;
         const widths = tabLayoutWidths.value;
         const virtIdx = infiniteScroll ? tabsLength + current : current;
@@ -222,9 +230,15 @@ export const MaterialTabBar = forwardRef<ScrollViewType, MaterialTabBarProps>(
             targetW - inset * 2,
             INDICATOR_TIMING_CONFIG,
           );
+
+          // タブバー中央寄せ: UI thread で直接 scrollTo（JS thread バイパス）
+          if (centerActive && scrollEnabled) {
+            const centerX = targetX + targetW / 2;
+            const scrollX = Math.max(0, centerX - SCREEN_WIDTH / 2);
+            reanimatedScrollTo(animatedScrollRef, scrollX, 0, true);
+          }
         }
 
-        // タブラベル色は次フレーム遅延で更新（gesture 優先）
         if (prev !== null) {
           runOnJS(setActiveIndexStateDeferred)(current);
         }

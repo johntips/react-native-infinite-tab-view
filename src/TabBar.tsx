@@ -17,8 +17,10 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
+  scrollTo as reanimatedScrollTo,
   runOnJS,
   useAnimatedReaction,
+  useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -112,11 +114,15 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
     },
     forwardedRef,
   ) => {
+    const animatedScrollRef = useAnimatedRef<ScrollView>();
     const localScrollRef = useRef<ScrollView | null>(null);
 
     const setRef = useCallback(
       (node: ScrollView | null) => {
         localScrollRef.current = node;
+        (
+          animatedScrollRef as unknown as { current: ScrollView | null }
+        ).current = node;
         if (typeof forwardedRef === "function") {
           forwardedRef(node);
         } else if (forwardedRef) {
@@ -124,7 +130,7 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
             node;
         }
       },
-      [forwardedRef],
+      [forwardedRef, animatedScrollRef],
     );
 
     const hasInitiallyScrolled = useRef(false);
@@ -185,6 +191,13 @@ export const DefaultTabBar = forwardRef<ScrollView, DefaultTabBarProps>(
         if (targetX !== undefined && targetW !== undefined && targetW > 0) {
           indicatorX.value = withTiming(targetX, INDICATOR_TIMING_CONFIG);
           indicatorWidth.value = withTiming(targetW, INDICATOR_TIMING_CONFIG);
+
+          // タブバー中央寄せ: worklet 内で直接 scrollTo
+          if (centerActive) {
+            const centerX = targetX + targetW / 2;
+            const scrollX = Math.max(0, centerX - SCREEN_WIDTH / 2);
+            reanimatedScrollTo(animatedScrollRef, scrollX, 0, true);
+          }
         }
 
         if (prev !== null) {

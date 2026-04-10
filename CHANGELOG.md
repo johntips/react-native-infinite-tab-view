@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-04-10
+
+### Performance
+
+- **タブバー中央寄せを worklet 内で直接駆動**: `useAnimatedReaction` 内で `reanimatedScrollTo(animatedRef)` を呼ぶ。JS thread を一切経由せず、リスト描画の重さから完全に切り離される
+- `useAnimatedRef` でタブバー ScrollView を UI thread から直接操作
+- インジケーター移動 + 中央寄せが完全に同一 worklet 内で実行される
+
 ## [4.1.0] - 2026-04-10
 
 ### Performance

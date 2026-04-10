@@ -3,10 +3,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InteractionManager, StyleSheet, View } from "react-native";
 import {
   Tabs,
-  useActiveTabIndexValue,
+  useActiveTabIndex,
   useIsNearby,
-  useTabs,
 } from "react-native-infinite-tab-view";
+import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
 import type { NewsItem } from "../data/newsItems";
 import { getNewsByCategory } from "../data/newsItems";
 import {
@@ -24,6 +24,7 @@ import { NewsCard } from "./NewsCard";
 
 interface NewsListProps {
   category: string;
+  tabIndex: number;
 }
 
 const renderItem = ({ item }: { item: NewsItem }) => <NewsCard item={item} />;
@@ -37,30 +38,41 @@ const keyExtractor = (item: NewsItem) => item.id;
  * - アクティブ化後: InteractionManager でスワイプアニメ完了を待ち、重いコンテンツをマウント
  * → タブスワイプを JS thread から完全に切り離し、60fps を担保
  */
-export const NewsList: React.FC<NewsListProps> = memo(({ category }) => {
-  const tabName = category.toLowerCase();
-  const activeIndex = useActiveTabIndexValue();
-  const tabs = useTabs();
-  const isActive = tabs[activeIndex]?.name === tabName;
-  const [ready, setReady] = useState(false);
+export const NewsList: React.FC<NewsListProps> = memo(
+  ({ category, tabIndex }) => {
+    // v4: activeIndex を SharedValue で購読し、自分のタブだけ isActive を更新
+    // → 20個の NewsList が存在しても、setState が走るのは旧/新アクティブの2個のみ
+    const activeIndex = useActiveTabIndex();
+    const [isActive, setIsActive] = useState(tabIndex === 0);
+    const [ready, setReady] = useState(tabIndex === 0);
 
-  useEffect(() => {
-    if (isActive && !ready) {
-      // 計測: リストラッパーが active になったタイミング（= タブスワイプ完了）
-      markListPhase(category, "mount");
-      const handle = InteractionManager.runAfterInteractions(() => {
-        setReady(true);
-      });
-      return () => handle.cancel();
+    useAnimatedReaction(
+      () => activeIndex.value === tabIndex,
+      (current, prev) => {
+        if (current !== prev) {
+          runOnJS(setIsActive)(current);
+        }
+      },
+      [tabIndex],
+    );
+
+    useEffect(() => {
+      if (isActive && !ready) {
+        markListPhase(category, "mount");
+        const handle = InteractionManager.runAfterInteractions(() => {
+          setReady(true);
+        });
+        return () => handle.cancel();
+      }
+    }, [isActive, ready, category]);
+
+    if (!ready) {
+      return <NewsListSkeleton />;
     }
-  }, [isActive, ready, category]);
 
-  if (!ready) {
-    return <NewsListSkeleton />;
-  }
-
-  return <HeavyNewsListContent category={category} />;
-});
+    return <HeavyNewsListContent category={category} />;
+  },
+);
 
 NewsList.displayName = "NewsList";
 
