@@ -1,0 +1,50 @@
+# CodeRabbit configuration
+#
+# Reference: https://docs.coderabbit.ai/reference/configuration
+#
+# This file is managed centrally via github-config/files/common/.coderabbit.yaml
+# and distributed by gh-infra. Edit the template, not the copy in each repo.
+
+# Use Japanese summary + English details since the project is bilingual
+language: "ja-JP"
+
+# Global CodeRabbit behavior
+reviews:
+  profile: "chill"        # "chill" is less nit-picky than "assertive", good for solo maintainer
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false              # skip the AI-generated poem (saves review noise)
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  # Skip review for simple chore/deps PRs to reduce noise
+  path_filters:
+    - "!**/*.lock"
+    - "!**/pnpm-lock.yaml"
+    - "!**/package-lock.json"
+    - "!**/yarn.lock"
+    - "!lib/**"           # built artifacts
+    - "!dist/**"
+    - "!coverage/**"
+    - "!_claude_memo_/**" # internal notes
+  path_instructions:
+    - path: "src/**"
+      instructions: |
+        Library source code. Prioritize:
+        - React performance (unnecessary re-renders, memo boundaries)
+        - Reanimated worklet vs JS thread discipline
+        - Public API stability (breaking changes need CHANGELOG entry)
+    - path: "example/**"
+      instructions: |
+        Example app — not distributed to npm. Focus on demonstrating the
+        library API cleanly. Minor lint issues are acceptable here.
+    - path: ".github/workflows/**"
+      instructions: |
+        CI workflows. Check for sha-pinning eventually, supply chain safety.
+
+chat:
+  auto_reply: true

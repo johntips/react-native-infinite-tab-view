@@ -21,6 +21,10 @@
 
 ---
 
+[![npm version](https://img.shields.io/npm/v/react-native-infinite-tab-view.svg?labelColor=171717&color=0866d6)](https://www.npmjs.com/package/react-native-infinite-tab-view)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?labelColor=171717)](./LICENSE)
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/johntips/react-native-infinite-tab-view?utm_source=oss&utm_medium=github&utm_campaign=johntips%2Freact-native-infinite-tab-view&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
+
 Infinite scroll tab view for React Native — built on **PagerView** + **Reanimated** for native-grade performance.
 
 **New Architecture ready** | **Expo 55+ compatible** | **Drop-in replacement for react-native-collapsible-tab-view**
