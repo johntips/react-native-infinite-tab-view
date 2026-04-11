@@ -21,9 +21,11 @@
 
 ---
 
-[![npm version](https://img.shields.io/npm/v/react-native-infinite-tab-view.svg?labelColor=171717&color=0866d6)](https://www.npmjs.com/package/react-native-infinite-tab-view)
+[![npm version](https://img.shields.io/npm/v/react-native-infinite-tab-view.svg?label=npm&labelColor=171717&color=0866d6)](https://www.npmjs.com/package/react-native-infinite-tab-view)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?labelColor=171717)](./LICENSE)
-[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/johntips/react-native-infinite-tab-view?utm_source=oss&utm_medium=github&utm_campaign=johntips%2Freact-native-infinite-tab-view&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
+[![Maintenance](https://img.shields.io/badge/status-maintenance-orange?labelColor=171717)](https://github.com/johntips/react-native-infinite-material-tab)
+[![Renovate enabled](https://img.shields.io/badge/renovate-enabled-1A1F6C?labelColor=171717&logo=renovatebot&logoColor=white)](https://github.com/apps/renovate)
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/johntips/react-native-infinite-tab-view?utm_source=oss&utm_medium=github&utm_campaign=johntips%2Freact-native-infinite-tab-view&labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
 Infinite scroll tab view for React Native — built on **PagerView** + **Reanimated** for native-grade performance.
 
